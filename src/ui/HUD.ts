@@ -2,7 +2,7 @@ import { eventBus } from '../core/EventBus';
 import { Player } from '../entities/Player';
 import { CONST } from '../core/Constants';
 import { NoiseSystem } from '../systems/NoiseSystem';
-import { GameState } from '../types/enums';
+import { GeneratorState } from '../types/enums';
 
 export class HUD {
   private container: HTMLDivElement;
@@ -18,10 +18,21 @@ export class HUD {
   private damageOverlay: HTMLDivElement;
   private crosshair: HTMLDivElement;
 
+  // Objectives panel elements
+  private objTimerValue: HTMLSpanElement;
+  private objGenStatus: HTMLSpanElement;
+  private objFuelCount: HTMLSpanElement;
+  private objFenceStatus: HTMLSpanElement;
+
   private player: Player;
   private noiseSystem: NoiseSystem;
   private surviveTime = CONST.SURVIVE_TIME;
   private visible = false;
+
+  // Objectives state
+  private generatorState = GeneratorState.Running;
+  private generatorFuel = CONST.GENERATOR_FUEL_MAX;
+  private canistersCollected = 0;
 
   constructor(player: Player, noiseSystem: NoiseSystem) {
     this.player = player;
@@ -147,8 +158,62 @@ export class HUD {
           background: rgba(136, 255, 136, 0.6);
           box-shadow: 0 0 3px rgba(136, 255, 136, 0.3);
         }
+        #hud-objectives {
+          position: absolute;
+          top: 12px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(0, 8, 0, 0.6);
+          border: 1px solid rgba(136, 255, 136, 0.2);
+          padding: 10px 16px;
+          font-size: 11px;
+          line-height: 1.7;
+          min-width: 280px;
+        }
+        #hud-objectives .obj-title {
+          font-size: 10px;
+          text-transform: uppercase;
+          letter-spacing: 3px;
+          opacity: 0.5;
+          margin-bottom: 6px;
+        }
+        #hud-objectives .obj-row {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        #hud-objectives .obj-check {
+          opacity: 0.5;
+          margin-right: 6px;
+        }
+        #hud-objectives .obj-value {
+          opacity: 0.7;
+          text-align: right;
+        }
+        #hud-objectives .obj-value.status-running { color: #88ff88; }
+        #hud-objectives .obj-value.status-off { color: #ff4444; }
+        #hud-objectives .obj-value.status-low { color: #ffaa44; }
       </style>
       <div id="hud-crosshair"></div>
+      <div id="hud-objectives">
+        <div class="obj-title">Objectives</div>
+        <div class="obj-row">
+          <span><span class="obj-check">></span>Survive until dawn</span>
+          <span class="obj-value" id="obj-timer">05:00</span>
+        </div>
+        <div class="obj-row">
+          <span><span class="obj-check">></span>Keep generator fueled</span>
+          <span class="obj-value status-running" id="obj-gen-status">Running</span>
+        </div>
+        <div class="obj-row">
+          <span><span class="obj-check">></span>Collect fuel from woods</span>
+          <span class="obj-value" id="obj-fuel-count">0 collected</span>
+        </div>
+        <div class="obj-row">
+          <span><span class="obj-check">></span>Stay inside the fence</span>
+          <span class="obj-value" id="obj-fence-status">Safe</span>
+        </div>
+      </div>
       <div id="hud-stamina">
         <div class="hud-label">Stamina</div>
         <div id="hud-stamina-bar"><div id="hud-stamina-fill"></div></div>
@@ -179,6 +244,12 @@ export class HUD {
     this.damageOverlay = this.container.querySelector('#hud-damage-overlay') as HTMLDivElement;
     this.crosshair = this.container.querySelector('#hud-crosshair') as HTMLDivElement;
 
+    // Objectives elements
+    this.objTimerValue = this.container.querySelector('#obj-timer') as HTMLSpanElement;
+    this.objGenStatus = this.container.querySelector('#obj-gen-status') as HTMLSpanElement;
+    this.objFuelCount = this.container.querySelector('#obj-fuel-count') as HTMLSpanElement;
+    this.objFenceStatus = this.container.querySelector('#obj-fence-status') as HTMLSpanElement;
+
     // Event listeners
     eventBus.on('interaction:available', ({ prompt }) => {
       this.interactionPrompt.textContent = prompt;
@@ -194,6 +265,21 @@ export class HUD {
       setTimeout(() => {
         this.damageOverlay.style.opacity = '0';
       }, 300);
+    });
+
+    // Objectives tracking
+    eventBus.on('generator:state-changed', ({ state }) => {
+      this.generatorState = state;
+    });
+
+    eventBus.on('generator:fuel-changed', ({ level }) => {
+      this.generatorFuel = level;
+    });
+
+    eventBus.on('player:pickup', ({ item }) => {
+      if (item === 'fuelCanister') {
+        this.canistersCollected++;
+      }
     });
   }
 
@@ -242,13 +328,14 @@ export class HUD {
     // Timer
     const mins = Math.floor(this.surviveTime / 60);
     const secs = Math.floor(this.surviveTime % 60);
-    this.timerDisplay.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    this.timerDisplay.textContent = timeStr;
     if (this.surviveTime < 60) {
       this.timerDisplay.style.color = '#ff4444';
     }
 
     // HP
-    const hearts = '♥'.repeat(this.player.hp) + '♡'.repeat(Math.max(0, CONST.PLAYER_HP - this.player.hp));
+    const hearts = '\u2665'.repeat(this.player.hp) + '\u2661'.repeat(Math.max(0, CONST.PLAYER_HP - this.player.hp));
     this.hpDisplay.textContent = hearts;
     this.hpDisplay.style.color = this.player.hp <= 1 ? '#ff4444' : '#88ff88';
 
@@ -261,6 +348,50 @@ export class HUD {
     const dmgIntensity = this.player.getDamageFlashIntensity();
     if (dmgIntensity > 0) {
       this.damageOverlay.style.opacity = String(dmgIntensity * 0.5);
+    }
+
+    // --- Objectives Panel ---
+
+    // Timer objective
+    this.objTimerValue.textContent = timeStr;
+    if (this.surviveTime < 60) {
+      this.objTimerValue.style.color = '#ff4444';
+    }
+
+    // Generator status
+    let genLabel: string;
+    let genClass: string;
+    if (this.generatorState === GeneratorState.Running) {
+      if (this.generatorFuel < 20) {
+        genLabel = 'Low Fuel';
+        genClass = 'status-low';
+      } else {
+        genLabel = 'Running';
+        genClass = 'status-running';
+      }
+    } else if (this.generatorState === GeneratorState.Broken) {
+      genLabel = 'Broken';
+      genClass = 'status-off';
+    } else {
+      genLabel = 'Off';
+      genClass = 'status-off';
+    }
+    this.objGenStatus.textContent = genLabel;
+    this.objGenStatus.className = `obj-value ${genClass}`;
+
+    // Fuel canisters
+    this.objFuelCount.textContent = `${this.canistersCollected} collected`;
+
+    // Fence safety (based on player position)
+    const pos = this.player.getPosition();
+    const inside = Math.abs(pos.x) < CONST.FENCE_PERIMETER_HALF &&
+                   Math.abs(pos.z) < CONST.FENCE_PERIMETER_HALF;
+    if (inside) {
+      this.objFenceStatus.textContent = 'Safe';
+      this.objFenceStatus.className = 'obj-value status-running';
+    } else {
+      this.objFenceStatus.textContent = 'OUTSIDE!';
+      this.objFenceStatus.className = 'obj-value status-off';
     }
   }
 

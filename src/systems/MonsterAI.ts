@@ -4,7 +4,6 @@ import { CONST } from '../core/Constants';
 import { eventBus } from '../core/EventBus';
 import { Monster } from '../entities/Monster';
 import { Player } from '../entities/Player';
-import { FenceSystem } from './FenceSystem';
 import { MonsterState } from '../types/enums';
 
 interface WaypointNode {
@@ -15,28 +14,29 @@ interface WaypointNode {
 export class MonsterAI implements GameSystem {
   monster: Monster;
   private player: Player;
-  private fenceSystem: FenceSystem;
   private waypoints: WaypointNode[] = [];
   private currentWaypointIdx = 0;
   private targetPosition = new THREE.Vector3();
   private lastKnownPlayerPos = new THREE.Vector3();
-  private attackCooldown = 0;
   private aggressionTimer = 0;
-  private isInsidePerimeter = false;
   private treePositions: THREE.Vector3[];
-  private isPowerOn = true;
+  private fuelSpawnPoints: THREE.Vector3[];
+  private gatePosition: THREE.Vector3;
+  private giveUpTimer = 0;
 
   constructor(
     monster: Monster,
     player: Player,
-    fenceSystem: FenceSystem,
     waypointPositions: THREE.Vector3[],
     treePositions: THREE.Vector3[],
+    fuelSpawnPoints: THREE.Vector3[],
+    gatePosition: THREE.Vector3,
   ) {
     this.monster = monster;
     this.player = player;
-    this.fenceSystem = fenceSystem;
     this.treePositions = treePositions;
+    this.fuelSpawnPoints = fuelSpawnPoints;
+    this.gatePosition = gatePosition;
 
     // Build waypoint graph
     this.buildWaypointGraph(waypointPositions);
@@ -56,14 +56,9 @@ export class MonsterAI implements GameSystem {
     eventBus.on('player:noise', ({ level, position }) => {
       this.onPlayerNoise(level, position);
     });
-
-    eventBus.on('generator:power-toggle', ({ isOn }) => {
-      this.isPowerOn = isOn;
-    });
   }
 
   private buildWaypointGraph(positions: THREE.Vector3[]): void {
-    // Create nodes
     this.waypoints = positions.map(p => ({
       position: p.clone(),
       neighbors: [],
@@ -80,12 +75,11 @@ export class MonsterAI implements GameSystem {
           distances.push({ idx: j, dist: d });
         }
       }
-      // Sort by distance, connect to closest 3-5
       distances.sort((a, b) => a.dist - b.dist);
       this.waypoints[i].neighbors = distances.slice(0, 5).map(d => d.idx);
     }
 
-    // Ensure graph is connected (connect isolated nodes to nearest)
+    // Ensure graph is connected
     for (let i = 0; i < this.waypoints.length; i++) {
       if (this.waypoints[i].neighbors.length === 0) {
         let minDist = Infinity;
@@ -104,103 +98,48 @@ export class MonsterAI implements GameSystem {
     }
   }
 
+  private isInsidePerimeter(pos: THREE.Vector3): boolean {
+    return Math.abs(pos.x) < CONST.FENCE_PERIMETER_HALF &&
+           Math.abs(pos.z) < CONST.FENCE_PERIMETER_HALF;
+  }
+
   private pickRandomWaypoint(): void {
     const aggBias = this.monster.aggressionLevel / 100;
-    // Bias toward fence waypoints as aggression increases
-    if (Math.random() < aggBias * 0.6) {
-      // Pick waypoint near fence
-      const fenceWaypoints = this.waypoints.filter(
-        w => {
-          const d = Math.max(
-            Math.abs(w.position.x) - CONST.FENCE_PERIMETER_HALF,
-            Math.abs(w.position.z) - CONST.FENCE_PERIMETER_HALF
-          );
-          return d > -5 && d < 10;
+
+    // Heavily bias toward fuel canister locations (makes venturing out dangerous)
+    if (Math.random() < 0.5 + aggBias * 0.2) {
+      const fuelWaypoints = this.waypoints.filter(w => {
+        for (const sp of this.fuelSpawnPoints) {
+          if (w.position.distanceTo(sp) < 12) return true;
         }
-      );
-      if (fenceWaypoints.length > 0) {
-        const wp = fenceWaypoints[Math.floor(Math.random() * fenceWaypoints.length)];
+        return false;
+      });
+      if (fuelWaypoints.length > 0) {
+        const wp = fuelWaypoints[Math.floor(Math.random() * fuelWaypoints.length)];
         this.targetPosition.copy(wp.position);
         return;
       }
     }
 
-    const idx = Math.floor(Math.random() * this.waypoints.length);
-    this.currentWaypointIdx = idx;
-    this.targetPosition.copy(this.waypoints[idx].position);
-  }
-
-  private findPathTo(target: THREE.Vector3): THREE.Vector3[] {
-    // A* on waypoint graph
-    const startIdx = this.findNearestWaypoint(this.monster.position);
-    const endIdx = this.findNearestWaypoint(target);
-
-    if (startIdx === endIdx) return [target];
-
-    const openSet = new Set([startIdx]);
-    const cameFrom = new Map<number, number>();
-    const gScore = new Map<number, number>();
-    const fScore = new Map<number, number>();
-
-    gScore.set(startIdx, 0);
-    fScore.set(startIdx, this.waypoints[startIdx].position.distanceTo(this.waypoints[endIdx].position));
-
-    while (openSet.size > 0) {
-      let current = -1;
-      let minF = Infinity;
-      for (const idx of openSet) {
-        const f = fScore.get(idx) ?? Infinity;
-        if (f < minF) {
-          minF = f;
-          current = idx;
-        }
-      }
-
-      if (current === endIdx) {
-        // Reconstruct path
-        const path: THREE.Vector3[] = [target];
-        let c = current;
-        while (cameFrom.has(c)) {
-          path.unshift(this.waypoints[c].position.clone());
-          c = cameFrom.get(c)!;
-        }
-        return path;
-      }
-
-      openSet.delete(current);
-
-      for (const neighbor of this.waypoints[current].neighbors) {
-        const tentG = (gScore.get(current) ?? Infinity) +
-          this.waypoints[current].position.distanceTo(this.waypoints[neighbor].position);
-
-        if (tentG < (gScore.get(neighbor) ?? Infinity)) {
-          cameFrom.set(neighbor, current);
-          gScore.set(neighbor, tentG);
-          fScore.set(neighbor, tentG +
-            this.waypoints[neighbor].position.distanceTo(this.waypoints[endIdx].position));
-          openSet.add(neighbor);
-        }
-      }
+    // Otherwise pick any waypoint outside the fence
+    const outsideWaypoints = this.waypoints.filter(
+      w => !this.isInsidePerimeter(w.position)
+    );
+    if (outsideWaypoints.length > 0) {
+      const wp = outsideWaypoints[Math.floor(Math.random() * outsideWaypoints.length)];
+      this.currentWaypointIdx = this.waypoints.indexOf(wp);
+      this.targetPosition.copy(wp.position);
+    } else {
+      const idx = Math.floor(Math.random() * this.waypoints.length);
+      this.currentWaypointIdx = idx;
+      this.targetPosition.copy(this.waypoints[idx].position);
     }
-
-    // No path found, go direct
-    return [target];
-  }
-
-  private findNearestWaypoint(pos: THREE.Vector3): number {
-    let minDist = Infinity;
-    let nearest = 0;
-    for (let i = 0; i < this.waypoints.length; i++) {
-      const d = pos.distanceTo(this.waypoints[i].position);
-      if (d < minDist) {
-        minDist = d;
-        nearest = i;
-      }
-    }
-    return nearest;
   }
 
   private onPlayerNoise(level: number, position: THREE.Vector3): void {
+    // Only react if player is outside the fence
+    if (this.isInsidePerimeter(position)) return;
+
     const distance = this.monster.position.distanceTo(position);
     const effectiveNoise = level / (1 + distance * 0.08);
     const threshold = CONST.MONSTER_NOISE_THRESHOLD_BASE -
@@ -209,10 +148,11 @@ export class MonsterAI implements GameSystem {
     if (effectiveNoise > Math.max(2, threshold)) {
       this.lastKnownPlayerPos.copy(position);
 
-      if (this.monster.state === MonsterState.Roaming) {
+      if (this.monster.state === MonsterState.Roaming ||
+          this.monster.state === MonsterState.Pacing ||
+          this.monster.state === MonsterState.Stalking) {
         this.changeState(MonsterState.Investigating);
       } else if (this.monster.state === MonsterState.Investigating) {
-        // Escalate to hunting if noise is strong
         if (effectiveNoise > threshold * 2) {
           this.changeState(MonsterState.Hunting);
         }
@@ -229,6 +169,21 @@ export class MonsterAI implements GameSystem {
     this.monster.stateTimer = 0;
   }
 
+  private clampOutsidePerimeter(pos: THREE.Vector3): void {
+    const H = CONST.FENCE_PERIMETER_HALF;
+    const buffer = 2; // Stay at least 2 units outside the fence
+    if (Math.abs(pos.x) < H + buffer && Math.abs(pos.z) < H + buffer) {
+      // Push to nearest fence edge + buffer
+      const distToXEdge = (H + buffer) - Math.abs(pos.x);
+      const distToZEdge = (H + buffer) - Math.abs(pos.z);
+      if (distToXEdge < distToZEdge) {
+        pos.x = pos.x >= 0 ? H + buffer : -(H + buffer);
+      } else {
+        pos.z = pos.z >= 0 ? H + buffer : -(H + buffer);
+      }
+    }
+  }
+
   fixedUpdate(dt: number): void {
     this.monster.stateTimer += dt;
 
@@ -239,174 +194,194 @@ export class MonsterAI implements GameSystem {
       this.monster.aggressionLevel = Math.min(100, this.monster.aggressionLevel + CONST.MONSTER_AGGRESSION_RATE);
     }
 
-    // Check if inside perimeter
-    const mPos = this.monster.position;
-    this.isInsidePerimeter =
-      Math.abs(mPos.x) < CONST.FENCE_PERIMETER_HALF &&
-      Math.abs(mPos.z) < CONST.FENCE_PERIMETER_HALF;
+    // Check if player is outside the fence
+    const playerPos = this.player.getPosition();
+    const playerOutside = !this.isInsidePerimeter(playerPos);
 
     switch (this.monster.state) {
       case MonsterState.Roaming:
-        this.updateRoaming(dt);
+        this.updateRoaming(dt, playerOutside);
         break;
       case MonsterState.Investigating:
-        this.updateInvestigating(dt);
+        this.updateInvestigating(dt, playerOutside);
         break;
       case MonsterState.Hunting:
-        this.updateHunting(dt);
+        this.updateHunting(dt, playerOutside);
         break;
-      case MonsterState.Attacking:
-        this.updateAttacking(dt);
+      case MonsterState.Stalking:
+        this.updateStalking(dt, playerOutside);
         break;
-      case MonsterState.Retreating:
-        this.updateRetreating(dt);
+      case MonsterState.Pacing:
+        this.updatePacing(dt, playerOutside);
         break;
     }
+
+    // Always enforce: monster stays outside perimeter
+    this.clampOutsidePerimeter(this.monster.position);
 
     this.monster.updateMeshPosition();
     this.monster.updateVisuals(dt);
   }
 
-  private updateRoaming(dt: number): void {
+  private updateRoaming(dt: number, playerOutside: boolean): void {
     const arrived = this.moveToward(this.targetPosition, CONST.MONSTER_ROAM_SPEED, dt);
     if (arrived) {
       this.pickRandomWaypoint();
     }
 
-    // Periodically check fence (siege behavior)
-    if (this.monster.aggressionLevel > 30 && this.monster.stateTimer > 20) {
-      if (Math.random() < 0.01) {
+    // If player is outside, detect and hunt
+    if (playerOutside) {
+      const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
+      if (distToPlayer < 25) {
+        this.lastKnownPlayerPos.copy(this.player.getPosition());
         this.changeState(MonsterState.Hunting);
-        this.targetPosition.set(0, 0, 0); // Head toward cabin
+        return;
+      }
+    }
+
+    // Transition to stalking or pacing as aggression rises
+    if (this.monster.aggressionLevel > 30 && this.monster.stateTimer > 15) {
+      if (Math.random() < 0.02) {
+        if (this.monster.aggressionLevel > 50 && Math.random() < 0.5) {
+          this.changeState(MonsterState.Stalking);
+        } else {
+          this.changeState(MonsterState.Pacing);
+        }
       }
     }
   }
 
-  private updateInvestigating(dt: number): void {
-    const arrived = this.moveToward(this.lastKnownPlayerPos, CONST.MONSTER_INVESTIGATE_SPEED, dt);
+  private updateInvestigating(dt: number, playerOutside: boolean): void {
+    this.moveToward(this.lastKnownPlayerPos, CONST.MONSTER_INVESTIGATE_SPEED, dt);
 
-    // Check line of sight to player
-    const toPlayer = this.player.getPosition().clone().sub(this.monster.position);
-    const distToPlayer = toPlayer.length();
-    if (distToPlayer < 15) {
-      this.changeState(MonsterState.Hunting);
-      this.lastKnownPlayerPos.copy(this.player.getPosition());
-      return;
+    // Check line of sight to player (increased detection range)
+    if (playerOutside) {
+      const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
+      if (distToPlayer < 25) {
+        this.changeState(MonsterState.Hunting);
+        this.lastKnownPlayerPos.copy(this.player.getPosition());
+        return;
+      }
     }
 
-    if (arrived || this.monster.stateTimer > CONST.MONSTER_INVESTIGATE_TIMEOUT) {
+    if (this.monster.stateTimer > CONST.MONSTER_INVESTIGATE_TIMEOUT) {
       this.changeState(MonsterState.Roaming);
       this.pickRandomWaypoint();
     }
   }
 
-  private updateHunting(dt: number): void {
-    // Update last known player position periodically
-    if (this.monster.stateTimer % 2 < dt) {
+  private updateHunting(dt: number, playerOutside: boolean): void {
+    // If player made it back inside the fence, give up
+    if (!playerOutside) {
+      this.giveUpTimer += dt;
+      if (this.giveUpTimer > 3) {
+        // Frustrated delay, then back off
+        this.giveUpTimer = 0;
+        this.changeState(MonsterState.Pacing);
+        return;
+      }
+      // Pace near the fence edge while waiting
+      const H = CONST.FENCE_PERIMETER_HALF;
+      const nearFenceTarget = this.lastKnownPlayerPos.clone();
+      // Clamp target to outside the fence
+      if (Math.abs(nearFenceTarget.x) < H + 3) {
+        nearFenceTarget.x = nearFenceTarget.x >= 0 ? H + 3 : -(H + 3);
+      }
+      if (Math.abs(nearFenceTarget.z) < H + 3) {
+        nearFenceTarget.z = nearFenceTarget.z >= 0 ? H + 3 : -(H + 3);
+      }
+      this.moveToward(nearFenceTarget, CONST.MONSTER_ROAM_SPEED, dt);
+      return;
+    }
+
+    this.giveUpTimer = 0;
+
+    // Track player position more frequently (every 0.5s instead of 2s)
+    if (this.monster.stateTimer % 0.5 < dt) {
       this.lastKnownPlayerPos.copy(this.player.getPosition());
     }
 
     const speed = CONST.MONSTER_HUNT_SPEED *
-      (1 + this.monster.aggressionLevel * 0.003);
+      (1 + this.monster.aggressionLevel * 0.005);
 
-    // If at fence and fence is electrified, attack fence
-    const distToFence = Math.max(
-      Math.abs(this.monster.position.x) - CONST.FENCE_PERIMETER_HALF,
-      Math.abs(this.monster.position.z) - CONST.FENCE_PERIMETER_HALF
-    );
+    this.moveToward(this.lastKnownPlayerPos, speed, dt);
 
-    if (!this.isInsidePerimeter && distToFence < 2) {
-      const segIdx = this.fenceSystem.getClosestSegmentIndex(
-        this.monster.position.x,
-        this.monster.position.z
-      );
-
-      if (this.fenceSystem.isSegmentElectrified(segIdx)) {
-        // Attack the fence
-        this.changeState(MonsterState.Attacking);
-        return;
-      } else if (this.fenceSystem.segments[segIdx].hp === 0 || !this.isPowerOn) {
-        // Fence is down, enter
-        this.isInsidePerimeter = true;
-        eventBus.emit('monster:entered-perimeter', {});
-      }
+    // Attack player if close enough
+    const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
+    if (distToPlayer < CONST.MONSTER_PLAYER_ATTACK_RANGE) {
+      this.attackPlayer();
     }
 
-    // If inside perimeter or fence is down, go straight to player
-    if (this.isInsidePerimeter) {
-      this.moveToward(this.player.getPosition(), speed, dt);
-
-      const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
-      if (distToPlayer < CONST.MONSTER_PLAYER_ATTACK_RANGE) {
-        this.attackPlayer();
-      }
-    } else {
-      // Navigate toward fence
-      this.moveToward(this.lastKnownPlayerPos, speed, dt);
-    }
-  }
-
-  private updateAttacking(dt: number): void {
-    this.attackCooldown -= dt;
-
-    if (this.attackCooldown <= 0) {
-      this.attackCooldown = CONST.MONSTER_ATTACK_COOLDOWN;
-
-      const segIdx = this.fenceSystem.getClosestSegmentIndex(
-        this.monster.position.x,
-        this.monster.position.z
-      );
-
-      if (this.fenceSystem.isSegmentElectrified(segIdx)) {
-        // Takes shock, damages fence
-        this.fenceSystem.damageSegment(segIdx);
-        eventBus.emit('monster:attack-fence', { segment: segIdx });
-
-        // If aggression < 75, retreat after attacking electrified fence
-        if (this.monster.aggressionLevel < 75) {
-          this.changeState(MonsterState.Retreating);
-          return;
-        }
-      } else {
-        // Fence not electrified, just smash through
-        this.fenceSystem.damageSegment(segIdx);
-        eventBus.emit('monster:attack-fence', { segment: segIdx });
-
-        if (this.fenceSystem.segments[segIdx].hp === 0) {
-          this.changeState(MonsterState.Hunting);
-          return;
-        }
-      }
-    }
-
-    // If inside perimeter now, hunt player
-    if (this.fenceSystem.isAnySegmentDestroyed()) {
-      this.isInsidePerimeter = true;
-      this.changeState(MonsterState.Hunting);
-      eventBus.emit('monster:entered-perimeter', {});
-    }
-  }
-
-  private updateRetreating(dt: number): void {
-    if (this.monster.stateTimer < 1) {
-      // Move away from fence
-      const retreatDir = this.monster.position.clone().normalize();
-      if (retreatDir.length() < 0.1) retreatDir.set(1, 0, 0);
-      const retreatTarget = this.monster.position.clone()
-        .add(retreatDir.multiplyScalar(15));
-      this.moveToward(retreatTarget, CONST.MONSTER_HUNT_SPEED, dt);
-    } else {
-      // Find a far waypoint and go there
-      const arrived = this.moveToward(this.targetPosition, CONST.MONSTER_ROAM_SPEED, dt);
-      if (arrived || this.monster.stateTimer > CONST.MONSTER_RETREAT_DURATION) {
+    // If lost the player for too long, go back to roaming
+    if (this.monster.stateTimer > 30) {
+      const dist = this.monster.position.distanceTo(this.player.getPosition());
+      if (dist > 35) {
         this.changeState(MonsterState.Roaming);
         this.pickRandomWaypoint();
       }
     }
+  }
 
-    if (this.monster.stateTimer > CONST.MONSTER_RETREAT_DURATION) {
-      this.changeState(MonsterState.Roaming);
-      this.pickRandomWaypoint();
+  private updateStalking(dt: number, playerOutside: boolean): void {
+    // Lurk near the south gate, waiting for the player to exit
+    const gateOutside = this.gatePosition.clone();
+    gateOutside.z += 5; // Stay just outside the gate
+    const arrived = this.moveToward(gateOutside, CONST.MONSTER_ROAM_SPEED, dt);
+
+    if (playerOutside) {
+      const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
+      if (distToPlayer < 25) {
+        this.lastKnownPlayerPos.copy(this.player.getPosition());
+        this.changeState(MonsterState.Hunting);
+        return;
+      }
+    }
+
+    // After stalking for a while, go back to roaming or pacing
+    if (this.monster.stateTimer > 20) {
+      if (Math.random() < 0.5) {
+        this.changeState(MonsterState.Pacing);
+      } else {
+        this.changeState(MonsterState.Roaming);
+        this.pickRandomWaypoint();
+      }
+    }
+  }
+
+  private updatePacing(dt: number, playerOutside: boolean): void {
+    // Pace around the fence perimeter at a distance, creating tension
+    const H = CONST.FENCE_PERIMETER_HALF;
+    const paceRadius = H + 5;
+
+    // Orbit around the perimeter
+    const angle = (this.monster.stateTimer * 0.15) + (this.currentWaypointIdx * Math.PI / 4);
+    const paceTarget = new THREE.Vector3(
+      Math.cos(angle) * paceRadius,
+      0,
+      Math.sin(angle) * paceRadius
+    );
+
+    this.moveToward(paceTarget, CONST.MONSTER_ROAM_SPEED * 0.8, dt);
+
+    // If player ventures outside, hunt them
+    if (playerOutside) {
+      const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
+      if (distToPlayer < 25) {
+        this.lastKnownPlayerPos.copy(this.player.getPosition());
+        this.changeState(MonsterState.Hunting);
+        return;
+      }
+    }
+
+    // After pacing for a while, transition to another state
+    if (this.monster.stateTimer > 25) {
+      const roll = Math.random();
+      if (this.monster.aggressionLevel > 50 && roll < 0.4) {
+        this.changeState(MonsterState.Stalking);
+      } else {
+        this.changeState(MonsterState.Roaming);
+        this.pickRandomWaypoint();
+      }
     }
   }
 
@@ -416,7 +391,6 @@ export class MonsterAI implements GameSystem {
     const pushDir = this.player.getPosition().clone()
       .sub(this.monster.position).normalize();
     this.player.camera.position.add(pushDir.multiplyScalar(2));
-    this.attackCooldown = CONST.MONSTER_ATTACK_COOLDOWN;
   }
 
   private moveToward(target: THREE.Vector3, speed: number, dt: number): boolean {

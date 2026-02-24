@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { GameSystem } from '../core/Engine';
 import { eventBus } from '../core/EventBus';
 import { FenceSegment } from '../entities/Fence';
@@ -17,25 +18,9 @@ export class FenceSystem implements GameSystem {
     });
   }
 
-  damageSegment(segmentIndex: number): void {
-    const seg = this.segments[segmentIndex];
-    if (!seg || seg.hp === 0) return;
-
-    const remaining = seg.damage();
-    eventBus.emit('fence:damaged', { segment: segmentIndex, hpRemaining: remaining });
-
-    if (remaining === 0) {
-      eventBus.emit('fence:destroyed', { segment: segmentIndex });
-    }
-  }
-
   isSegmentElectrified(segmentIndex: number): boolean {
     const seg = this.segments[segmentIndex];
     return seg ? seg.isElectrified : false;
-  }
-
-  isAnySegmentDestroyed(): boolean {
-    return this.segments.some(s => s.hp === 0);
   }
 
   getClosestSegmentIndex(x: number, z: number): number {
@@ -59,7 +44,7 @@ export class FenceSystem implements GameSystem {
     if (this.isElectrified) {
       const pulse = 0.8 + Math.sin(performance.now() * 0.005) * 0.2;
       for (const seg of this.segments) {
-        if (seg.hp > 0 && seg.isElectrified) {
+        if (seg.isElectrified) {
           const mat = seg.data.wires.material as THREE.LineBasicMaterial;
           mat.opacity = pulse;
         }
@@ -67,5 +52,3 @@ export class FenceSystem implements GameSystem {
     }
   }
 }
-
-import * as THREE from 'three';

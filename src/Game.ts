@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Engine, GameSystem } from './core/Engine';
 import { CONST } from './core/Constants';
 import { eventBus } from './core/EventBus';
-import { GameState, GeneratorState, MonsterState } from './types/enums';
+import { GameState, GeneratorState } from './types/enums';
 
 import { Player } from './entities/Player';
 import { Monster } from './entities/Monster';
@@ -135,9 +135,10 @@ export class Game {
     this.monsterAI = new MonsterAI(
       this.monster,
       this.player,
-      this.fenceSystem,
       this.level.woods.monsterWaypoints,
       this.level.woods.treePositions,
+      this.level.woods.fuelSpawnPoints,
+      this.level.fence.gatePosition,
     );
 
     // Camera system
@@ -256,10 +257,6 @@ export class Game {
       this.audioManager?.playOneShot('hit');
     });
 
-    eventBus.on('monster:entered-perimeter', () => {
-      this.audioManager?.playOneShot('scare');
-    });
-
     eventBus.on('minigame:end', ({ success }) => {
       if (success) {
         this.audioManager?.playOneShot('repair');
@@ -345,7 +342,7 @@ export class Game {
 
       // Reduce fog
       if (this.engine.scene.fog instanceof THREE.FogExp2) {
-        this.engine.scene.fog.density = 0.04 * (1 - t * 0.8);
+        this.engine.scene.fog.density = 0.02 * (1 - t * 0.8);
       }
 
       if (t < 1) {
@@ -383,6 +380,6 @@ export class Game {
     this.hud?.dispose();
 
     // Reset fog
-    this.engine.scene.fog = new THREE.FogExp2(0x010208, 0.04);
+    this.engine.scene.fog = new THREE.FogExp2(0x010208, 0.02);
   }
 }

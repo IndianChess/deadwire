@@ -112,7 +112,9 @@ export class Monster {
     // Bob slightly when moving
     if (this.state === MonsterState.Roaming ||
         this.state === MonsterState.Investigating ||
-        this.state === MonsterState.Hunting) {
+        this.state === MonsterState.Hunting ||
+        this.state === MonsterState.Stalking ||
+        this.state === MonsterState.Pacing) {
       const bob = Math.sin(performance.now() * 0.006) * 0.05;
       this.mesh.position.y = bob;
     }

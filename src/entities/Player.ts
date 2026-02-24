@@ -29,11 +29,11 @@ export class Player implements GameSystem {
     this.camera = camera;
     this.input = input;
 
-    this.flashlight = new THREE.SpotLight(0xfff5e0, 3, 25, 0.5, 0.3, 1.5);
+    this.flashlight = new THREE.SpotLight(0xfff5e0, 15, 60, 0.7, 0.3, 0.8);
     this.flashlight.castShadow = true;
     this.flashlight.shadow.mapSize.set(512, 512);
     this.flashlight.shadow.camera.near = 0.2;
-    this.flashlight.shadow.camera.far = 25;
+    this.flashlight.shadow.camera.far = 50;
     this.flashlight.target = new THREE.Object3D();
 
     camera.add(this.flashlight);
@@ -142,7 +142,7 @@ export class Player implements GameSystem {
         this.flashlight.visible = false;
         eventBus.emit('player:flashlight-toggle', { isOn: false });
       }
-      this.flashlight.intensity = 3 * Math.min(1, this.flashlightBattery / 20);
+      this.flashlight.intensity = 15 * Math.min(1, this.flashlightBattery / 20);
     } else {
       this.flashlightBattery = Math.min(
         CONST.FLASHLIGHT_MAX,

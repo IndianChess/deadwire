@@ -6,14 +6,8 @@ export interface GameEvents {
   'generator:state-changed': { state: GeneratorState };
   'generator:power-toggle': { isOn: boolean };
   'generator:breakdown': {};
-  'fence:damaged': { segment: number; hpRemaining: number };
-  'fence:destroyed': { segment: number };
-  'fence:repaired': { segment: number };
   'fence:electrified-changed': { isElectrified: boolean };
   'monster:state-changed': { from: MonsterState; to: MonsterState };
-  'monster:entered-perimeter': {};
-  'monster:killed': {};
-  'monster:attack-fence': { segment: number };
   'player:noise': { level: number; position: Vector3 };
   'player:damaged': { amount: number; hpRemaining: number };
   'player:died': {};

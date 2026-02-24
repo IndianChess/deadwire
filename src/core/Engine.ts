@@ -31,7 +31,7 @@ export class Engine {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x010208, 0.04);
+    this.scene.fog = new THREE.FogExp2(0x010208, 0.02);
 
     this.camera = new THREE.PerspectiveCamera(
       70,

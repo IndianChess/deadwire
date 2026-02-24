@@ -16,8 +16,8 @@ export enum MonsterState {
   Roaming = 'Roaming',
   Investigating = 'Investigating',
   Hunting = 'Hunting',
-  Attacking = 'Attacking',
-  Retreating = 'Retreating',
+  Stalking = 'Stalking',
+  Pacing = 'Pacing',
 }
 
 export enum FenceSegmentId {
