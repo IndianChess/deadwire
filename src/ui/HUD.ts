@@ -17,6 +17,9 @@ export class HUD {
   private inventoryDisplay: HTMLDivElement;
   private damageOverlay: HTMLDivElement;
   private crosshair: HTMLDivElement;
+  private fpsDisplay: HTMLDivElement;
+  private frames = 0;
+  private lastFpsUpdate = 0;
 
   // Objectives panel elements
   private objTimerValue: HTMLSpanElement;
@@ -227,6 +230,7 @@ export class HUD {
       <div id="hud-timer">05:00</div>
       <div id="hud-hp"></div>
       <div id="hud-inventory"></div>
+      <div id="hud-fps" style="position: absolute; top: 150px; left: 20px; font-size: 10px; opacity: 0.5;">FPS: 0</div>
       <div id="hud-damage-overlay"></div>
     `;
 
@@ -243,6 +247,7 @@ export class HUD {
     this.inventoryDisplay = this.container.querySelector('#hud-inventory') as HTMLDivElement;
     this.damageOverlay = this.container.querySelector('#hud-damage-overlay') as HTMLDivElement;
     this.crosshair = this.container.querySelector('#hud-crosshair') as HTMLDivElement;
+    this.fpsDisplay = this.container.querySelector('#hud-fps') as HTMLDivElement;
 
     // Objectives elements
     this.objTimerValue = this.container.querySelector('#obj-timer') as HTMLSpanElement;
@@ -299,6 +304,15 @@ export class HUD {
 
   update(): void {
     if (!this.visible) return;
+
+    // FPS Counter
+    this.frames++;
+    const now = performance.now();
+    if (now - this.lastFpsUpdate > 1000) {
+      this.fpsDisplay.textContent = `FPS: ${this.frames}`;
+      this.frames = 0;
+      this.lastFpsUpdate = now;
+    }
 
     // Stamina
     const staminaPct = this.player.stamina / CONST.STAMINA_MAX;
@@ -385,7 +399,7 @@ export class HUD {
     // Fence safety (based on player position)
     const pos = this.player.getPosition();
     const inside = Math.abs(pos.x) < CONST.FENCE_PERIMETER_HALF &&
-                   Math.abs(pos.z) < CONST.FENCE_PERIMETER_HALF;
+      Math.abs(pos.z) < CONST.FENCE_PERIMETER_HALF;
     if (inside) {
       this.objFenceStatus.textContent = 'Safe';
       this.objFenceStatus.className = 'obj-value status-running';

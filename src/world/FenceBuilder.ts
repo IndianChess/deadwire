@@ -40,13 +40,30 @@ export function buildFence(): FenceResult {
     normal: THREE.Vector3;
     hasGate: boolean;
   }> = [
-    { start: new THREE.Vector3(-H, 0, -H), end: new THREE.Vector3(H, 0, -H), normal: new THREE.Vector3(0, 0, -1), hasGate: false },
-    { start: new THREE.Vector3(H, 0, -H), end: new THREE.Vector3(H, 0, H), normal: new THREE.Vector3(1, 0, 0), hasGate: false },
-    { start: new THREE.Vector3(H, 0, H), end: new THREE.Vector3(-H, 0, H), normal: new THREE.Vector3(0, 0, 1), hasGate: true },
-    { start: new THREE.Vector3(-H, 0, H), end: new THREE.Vector3(-H, 0, -H), normal: new THREE.Vector3(-1, 0, 0), hasGate: false },
-  ];
+      { start: new THREE.Vector3(-H, 0, -H), end: new THREE.Vector3(H, 0, -H), normal: new THREE.Vector3(0, 0, -1), hasGate: false },
+      { start: new THREE.Vector3(H, 0, -H), end: new THREE.Vector3(H, 0, H), normal: new THREE.Vector3(1, 0, 0), hasGate: false },
+      { start: new THREE.Vector3(H, 0, H), end: new THREE.Vector3(-H, 0, H), normal: new THREE.Vector3(0, 0, 1), hasGate: true },
+      { start: new THREE.Vector3(-H, 0, H), end: new THREE.Vector3(-H, 0, -H), normal: new THREE.Vector3(-1, 0, 0), hasGate: false },
+    ];
 
   let gatePos = new THREE.Vector3(0, 0, H);
+
+  // Create total posts across all segments using InstancedMesh
+  let totalPosts = 0;
+  for (const def of segmentDefs) {
+    const length = def.end.clone().sub(def.start).length();
+    const numPosts = Math.floor(length / spacing) + 1;
+    totalPosts += numPosts;
+  }
+
+  const postGeo = new THREE.CylinderGeometry(0.05, 0.05, FH, 4);
+  const instancedPosts = new THREE.InstancedMesh(postGeo, postMat, totalPosts);
+  instancedPosts.castShadow = true;
+  instancedPosts.receiveShadow = true;
+  group.add(instancedPosts);
+
+  let currentPostIdx = 0;
+  const dummy = new THREE.Object3D();
 
   for (const def of segmentDefs) {
     const segGroup = new THREE.Group();
@@ -54,7 +71,7 @@ export function buildFence(): FenceResult {
     const length = dir.length();
     dir.normalize();
     const numPosts = Math.floor(length / spacing) + 1;
-    const posts: THREE.Mesh[] = [];
+    const postPositionsForWires: THREE.Vector3[] = [];
     const wirePositions: number[] = [];
 
     for (let i = 0; i < numPosts; i++) {
@@ -68,19 +85,17 @@ export function buildFence(): FenceResult {
         if (Math.abs(t - mid) < gateHalfWidth) continue;
       }
 
-      const postGeo = new THREE.CylinderGeometry(0.05, 0.05, FH, 4);
-      const post = new THREE.Mesh(postGeo, postMat);
-      post.position.set(pos.x, FH / 2, pos.z);
-      post.castShadow = true;
-      segGroup.add(post);
-      posts.push(post);
+      dummy.position.set(pos.x, FH / 2, pos.z);
+      dummy.updateMatrix();
+      instancedPosts.setMatrixAt(currentPostIdx++, dummy.matrix);
+      postPositionsForWires.push(dummy.position.clone());
     }
 
     // Wires between consecutive posts
     const wireRows = 5;
-    for (let p = 0; p < posts.length - 1; p++) {
-      const p1 = posts[p].position;
-      const p2 = posts[p + 1].position;
+    for (let p = 0; p < postPositionsForWires.length - 1; p++) {
+      const p1 = postPositionsForWires[p];
+      const p2 = postPositionsForWires[p + 1];
       for (let row = 0; row < wireRows; row++) {
         const y = 0.3 + (row / (wireRows - 1)) * (FH - 0.6);
         wirePositions.push(p1.x, y, p1.z, p2.x, y, p2.z);
@@ -130,13 +145,16 @@ export function buildFence(): FenceResult {
 
     segments.push({
       group: segGroup,
-      posts,
+      posts: [], // Posts are now in instancedPosts
       wires,
       collisionBox: new THREE.Box3(boxMin, boxMax),
       midpoint: midpoint.clone(),
       normal: def.normal,
     });
   }
+
+  instancedPosts.count = currentPostIdx;
+  instancedPosts.instanceMatrix.needsUpdate = true;
 
   return {
     group,

@@ -12,6 +12,8 @@ export class CameraSystem implements GameSystem {
   selectedCamera = 0;
 
   private monster: Monster;
+  private playerCamera: THREE.Camera;
+  private monitorPosition: THREE.Vector3;
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
   private frameCounter = 0;
@@ -87,12 +89,15 @@ export class CameraSystem implements GameSystem {
     renderer: THREE.WebGLRenderer,
     scene: THREE.Scene,
     monster: Monster,
+    playerCamera: THREE.Camera,
     fenceData: Array<{ midpoint: THREE.Vector3; normal: THREE.Vector3 }>,
     monitorPosition: THREE.Vector3,
   ) {
     this.renderer = renderer;
     this.scene = scene;
     this.monster = monster;
+    this.playerCamera = playerCamera;
+    this.monitorPosition = monitorPosition.clone();
 
     // Create 4 cameras on fence posts
     for (let i = 0; i < CONST.CAMERA_COUNT; i++) {
@@ -173,20 +178,29 @@ export class CameraSystem implements GameSystem {
   }
 
   update(_dt: number): void {
-    // Round-robin rendering
-    const camIdx = this.frameCounter % CONST.CAMERA_COUNT;
-    this.frameCounter++;
+    const time = performance.now() * 0.001;
 
-    if (this.isPowerOn && this.cameras[camIdx]) {
-      const cam = this.cameras[camIdx];
-      // Temporarily hide monitor to avoid recursion
-      this.renderer.setRenderTarget(cam.renderTarget);
-      this.renderer.render(this.scene, cam.camera);
-      this.renderer.setRenderTarget(null);
+    // Only render cameras if power is on and player is near the monitor
+    const distToMonitor = this.playerCamera.position.distanceTo(this.monitorPosition);
+    const shouldRender = this.isPowerOn && distToMonitor < 12;
+
+    if (shouldRender) {
+      // Round-robin rendering: render one camera per frame
+      const camIdx = this.frameCounter % CONST.CAMERA_COUNT;
+      this.frameCounter++;
+
+      if (this.cameras[camIdx]) {
+        const cam = this.cameras[camIdx];
+        // Temporarily hide monitor to avoid recursion
+        if (this.monitorMesh) this.monitorMesh.visible = false;
+        this.renderer.setRenderTarget(cam.renderTarget);
+        this.renderer.render(this.scene, cam.camera);
+        this.renderer.setRenderTarget(null);
+        if (this.monitorMesh) this.monitorMesh.visible = true;
+      }
     }
 
     // Update shader uniforms
-    const time = performance.now() * 0.001;
     for (let i = 0; i < this.monitorMaterials.length; i++) {
       const mat = this.monitorMaterials[i];
       mat.uniforms.time.value = time;

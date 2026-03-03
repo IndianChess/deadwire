@@ -146,6 +146,7 @@ export class Game {
       this.engine.renderer,
       this.engine.scene,
       this.monster,
+      this.player.camera,
       this.level.fence.segments.map(s => ({
         midpoint: s.midpoint,
         normal: s.normal,
@@ -201,6 +202,13 @@ export class Game {
     const origRender = this.engine.renderer.render.bind(this.engine.renderer);
     let composerRendering = false;
     this.engine.renderer.render = (scene: THREE.Scene, camera: THREE.Camera) => {
+      // If we are currently rendering to a render target (like the security cameras),
+      // do not use the post-processing composer, just render normally.
+      if (this.engine.renderer.getRenderTarget() !== null) {
+        origRender(scene, camera);
+        return;
+      }
+
       if (composerRendering) {
         origRender(scene, camera);
         return;

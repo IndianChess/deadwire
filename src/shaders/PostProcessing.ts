@@ -68,7 +68,7 @@ export function createPostProcessing(
   composer.addPass(renderPass);
 
   const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2),
     0.3,  // strength
     0.5,  // radius
     0.85  // threshold
@@ -80,7 +80,7 @@ export function createPostProcessing(
 
   const onResize = () => {
     composer.setSize(window.innerWidth, window.innerHeight);
-    bloomPass.resolution.set(window.innerWidth, window.innerHeight);
+    bloomPass.resolution.set(window.innerWidth / 2, window.innerHeight / 2);
   };
   window.addEventListener('resize', onResize);
 
