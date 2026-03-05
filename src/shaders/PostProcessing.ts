@@ -68,7 +68,7 @@ export function createPostProcessing(
   composer.addPass(renderPass);
 
   const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2),
+    new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4),
     0.3,  // strength
     0.5,  // radius
     0.85  // threshold

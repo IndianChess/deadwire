@@ -25,6 +25,20 @@ export class Player implements GameSystem {
   private damageFlashTime = 0;
   private position = new THREE.Vector3(0, CONST.PLAYER_HEIGHT, 0);
 
+  // Pre-allocated temporaries for hot-path methods (zero per-frame allocations)
+  private _tmpNewPos = new THREE.Vector3();
+  private _tmpSlide = new THREE.Vector3();
+  private _tmpCameraDir = new THREE.Vector3();
+  private _tmpRight = new THREE.Vector3();
+  private _tmpUp = new THREE.Vector3(0, 1, 0);
+  private _playerBox = new THREE.Box3();
+  private _playerBoxMin = new THREE.Vector3();
+  private _playerBoxMax = new THREE.Vector3();
+
+  // Pre-computed collision threshold (squared)
+  private _collisionRadiusSq = (CONST.PLAYER_RADIUS + 0.35) * (CONST.PLAYER_RADIUS + 0.35);
+  private _collisionRadius = CONST.PLAYER_RADIUS + 0.35;
+
   constructor(camera: THREE.PerspectiveCamera, input: InputManager) {
     this.camera = camera;
     this.input = input;
@@ -90,38 +104,36 @@ export class Player implements GameSystem {
       this.stamina = Math.min(CONST.STAMINA_MAX, this.stamina + CONST.STAMINA_REGEN * dt);
     }
 
-    // Apply movement in camera direction (yaw only)
-    const cameraDir = new THREE.Vector3();
-    this.camera.getWorldDirection(cameraDir);
-    cameraDir.y = 0;
-    cameraDir.normalize();
+    // Apply movement in camera direction (yaw only) — reuse pre-allocated vectors
+    this.camera.getWorldDirection(this._tmpCameraDir);
+    this._tmpCameraDir.y = 0;
+    this._tmpCameraDir.normalize();
 
-    const right = new THREE.Vector3();
-    right.crossVectors(cameraDir, new THREE.Vector3(0, 1, 0)).normalize();
+    this._tmpRight.crossVectors(this._tmpCameraDir, this._tmpUp).normalize();
 
     this.velocity.set(0, 0, 0);
-    this.velocity.addScaledVector(cameraDir, -this.direction.z);
-    this.velocity.addScaledVector(right, this.direction.x);
+    this.velocity.addScaledVector(this._tmpCameraDir, -this.direction.z);
+    this.velocity.addScaledVector(this._tmpRight, this.direction.x);
     if (this.velocity.length() > 0) this.velocity.normalize();
     this.velocity.multiplyScalar(speed * dt);
 
-    // Apply and collide
-    const newPos = this.position.clone().add(this.velocity);
-    newPos.y = CONST.PLAYER_HEIGHT;
+    // Apply and collide — reuse pre-allocated temp vectors
+    this._tmpNewPos.copy(this.position).add(this.velocity);
+    this._tmpNewPos.y = CONST.PLAYER_HEIGHT;
 
-    if (!this.checkCollision(newPos)) {
-      this.position.copy(newPos);
+    if (!this.checkCollision(this._tmpNewPos)) {
+      this.position.copy(this._tmpNewPos);
     } else {
       // Try sliding along axes
-      const slideX = this.position.clone();
-      slideX.x += this.velocity.x;
-      if (!this.checkCollision(slideX)) {
-        this.position.x = slideX.x;
+      this._tmpSlide.copy(this.position);
+      this._tmpSlide.x += this.velocity.x;
+      if (!this.checkCollision(this._tmpSlide)) {
+        this.position.x = this._tmpSlide.x;
       }
-      const slideZ = this.position.clone();
-      slideZ.z += this.velocity.z;
-      if (!this.checkCollision(slideZ)) {
-        this.position.z = slideZ.z;
+      this._tmpSlide.copy(this.position);
+      this._tmpSlide.z += this.velocity.z;
+      if (!this.checkCollision(this._tmpSlide)) {
+        this.position.z = this._tmpSlide.z;
       }
     }
 
@@ -173,27 +185,38 @@ export class Player implements GameSystem {
   }
 
   private checkCollision(pos: THREE.Vector3): boolean {
-    const playerMin = new THREE.Vector3(
+    // Reuse pre-allocated Box3 instead of creating new one each call
+    this._playerBoxMin.set(
       pos.x - CONST.PLAYER_RADIUS,
       0,
       pos.z - CONST.PLAYER_RADIUS
     );
-    const playerMax = new THREE.Vector3(
+    this._playerBoxMax.set(
       pos.x + CONST.PLAYER_RADIUS,
       CONST.PLAYER_HEIGHT + 0.3,
       pos.z + CONST.PLAYER_RADIUS
     );
-    const playerBox = new THREE.Box3(playerMin, playerMax);
+    this._playerBox.set(this._playerBoxMin, this._playerBoxMax);
 
     for (const box of this.collisionBoxes) {
-      if (playerBox.intersectsBox(box)) return true;
+      if (this._playerBox.intersectsBox(box)) return true;
     }
 
-    for (const tree of this.treePositions) {
-      const dx = pos.x - tree.x;
-      const dz = pos.z - tree.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < CONST.PLAYER_RADIUS + 0.35) return true;
+    // Fast AABB rejection + squared-distance check (avoids Math.sqrt entirely)
+    const px = pos.x;
+    const pz = pos.z;
+    const threshold = this._collisionRadius;
+    const thresholdSq = this._collisionRadiusSq;
+    for (let i = 0, len = this.treePositions.length; i < len; i++) {
+      const tree = this.treePositions[i];
+      const dx = px - tree.x;
+      // Fast rejection on X axis
+      if (dx > threshold || dx < -threshold) continue;
+      const dz = pz - tree.z;
+      // Fast rejection on Z axis
+      if (dz > threshold || dz < -threshold) continue;
+      // Squared distance check (no sqrt)
+      if (dx * dx + dz * dz < thresholdSq) return true;
     }
 
     return false;

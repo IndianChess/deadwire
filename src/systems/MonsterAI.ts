@@ -24,6 +24,14 @@ export class MonsterAI implements GameSystem {
   private gatePosition: THREE.Vector3;
   private giveUpTimer = 0;
 
+  // Pre-allocated temporaries for hot-path methods (zero allocations per frame)
+  private _tmpDir = new THREE.Vector3();
+  private _tmpToTree = new THREE.Vector3();
+  private _tmpAvoid = new THREE.Vector3();
+  private _tmpPlayerPos = new THREE.Vector3();
+  private _tmpFenceTarget = new THREE.Vector3();
+  private _tmpGateOutside = new THREE.Vector3();
+
   constructor(
     monster: Monster,
     player: Player,
@@ -100,7 +108,7 @@ export class MonsterAI implements GameSystem {
 
   private isInsidePerimeter(pos: THREE.Vector3): boolean {
     return Math.abs(pos.x) < CONST.FENCE_PERIMETER_HALF &&
-           Math.abs(pos.z) < CONST.FENCE_PERIMETER_HALF;
+      Math.abs(pos.z) < CONST.FENCE_PERIMETER_HALF;
   }
 
   private pickRandomWaypoint(): void {
@@ -149,8 +157,8 @@ export class MonsterAI implements GameSystem {
       this.lastKnownPlayerPos.copy(position);
 
       if (this.monster.state === MonsterState.Roaming ||
-          this.monster.state === MonsterState.Pacing ||
-          this.monster.state === MonsterState.Stalking) {
+        this.monster.state === MonsterState.Pacing ||
+        this.monster.state === MonsterState.Stalking) {
         this.changeState(MonsterState.Investigating);
       } else if (this.monster.state === MonsterState.Investigating) {
         if (effectiveNoise > threshold * 2) {
@@ -184,6 +192,13 @@ export class MonsterAI implements GameSystem {
     }
   }
 
+  /** Read player position into reusable temp vector (avoids clone allocation) */
+  private readPlayerPos(): THREE.Vector3 {
+    const pp = this.player.getPosition();
+    this._tmpPlayerPos.copy(pp);
+    return this._tmpPlayerPos;
+  }
+
   fixedUpdate(dt: number): void {
     this.monster.stateTimer += dt;
 
@@ -195,24 +210,24 @@ export class MonsterAI implements GameSystem {
     }
 
     // Check if player is outside the fence
-    const playerPos = this.player.getPosition();
+    const playerPos = this.readPlayerPos();
     const playerOutside = !this.isInsidePerimeter(playerPos);
 
     switch (this.monster.state) {
       case MonsterState.Roaming:
-        this.updateRoaming(dt, playerOutside);
+        this.updateRoaming(dt, playerOutside, playerPos);
         break;
       case MonsterState.Investigating:
-        this.updateInvestigating(dt, playerOutside);
+        this.updateInvestigating(dt, playerOutside, playerPos);
         break;
       case MonsterState.Hunting:
-        this.updateHunting(dt, playerOutside);
+        this.updateHunting(dt, playerOutside, playerPos);
         break;
       case MonsterState.Stalking:
-        this.updateStalking(dt, playerOutside);
+        this.updateStalking(dt, playerOutside, playerPos);
         break;
       case MonsterState.Pacing:
-        this.updatePacing(dt, playerOutside);
+        this.updatePacing(dt, playerOutside, playerPos);
         break;
     }
 
@@ -223,7 +238,7 @@ export class MonsterAI implements GameSystem {
     this.monster.updateVisuals(dt);
   }
 
-  private updateRoaming(dt: number, playerOutside: boolean): void {
+  private updateRoaming(dt: number, playerOutside: boolean, playerPos: THREE.Vector3): void {
     const arrived = this.moveToward(this.targetPosition, CONST.MONSTER_ROAM_SPEED, dt);
     if (arrived) {
       this.pickRandomWaypoint();
@@ -231,9 +246,9 @@ export class MonsterAI implements GameSystem {
 
     // If player is outside, detect and hunt
     if (playerOutside) {
-      const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
+      const distToPlayer = this.monster.position.distanceTo(playerPos);
       if (distToPlayer < 25) {
-        this.lastKnownPlayerPos.copy(this.player.getPosition());
+        this.lastKnownPlayerPos.copy(playerPos);
         this.changeState(MonsterState.Hunting);
         return;
       }
@@ -251,15 +266,15 @@ export class MonsterAI implements GameSystem {
     }
   }
 
-  private updateInvestigating(dt: number, playerOutside: boolean): void {
+  private updateInvestigating(dt: number, playerOutside: boolean, playerPos: THREE.Vector3): void {
     this.moveToward(this.lastKnownPlayerPos, CONST.MONSTER_INVESTIGATE_SPEED, dt);
 
     // Check line of sight to player (increased detection range)
     if (playerOutside) {
-      const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
+      const distToPlayer = this.monster.position.distanceTo(playerPos);
       if (distToPlayer < 25) {
         this.changeState(MonsterState.Hunting);
-        this.lastKnownPlayerPos.copy(this.player.getPosition());
+        this.lastKnownPlayerPos.copy(playerPos);
         return;
       }
     }
@@ -270,7 +285,7 @@ export class MonsterAI implements GameSystem {
     }
   }
 
-  private updateHunting(dt: number, playerOutside: boolean): void {
+  private updateHunting(dt: number, playerOutside: boolean, playerPos: THREE.Vector3): void {
     // If player made it back inside the fence, give up
     if (!playerOutside) {
       this.giveUpTimer += dt;
@@ -280,17 +295,17 @@ export class MonsterAI implements GameSystem {
         this.changeState(MonsterState.Pacing);
         return;
       }
-      // Pace near the fence edge while waiting
+      // Pace near the fence edge while waiting (reuse temp vector)
       const H = CONST.FENCE_PERIMETER_HALF;
-      const nearFenceTarget = this.lastKnownPlayerPos.clone();
+      this._tmpFenceTarget.copy(this.lastKnownPlayerPos);
       // Clamp target to outside the fence
-      if (Math.abs(nearFenceTarget.x) < H + 3) {
-        nearFenceTarget.x = nearFenceTarget.x >= 0 ? H + 3 : -(H + 3);
+      if (Math.abs(this._tmpFenceTarget.x) < H + 3) {
+        this._tmpFenceTarget.x = this._tmpFenceTarget.x >= 0 ? H + 3 : -(H + 3);
       }
-      if (Math.abs(nearFenceTarget.z) < H + 3) {
-        nearFenceTarget.z = nearFenceTarget.z >= 0 ? H + 3 : -(H + 3);
+      if (Math.abs(this._tmpFenceTarget.z) < H + 3) {
+        this._tmpFenceTarget.z = this._tmpFenceTarget.z >= 0 ? H + 3 : -(H + 3);
       }
-      this.moveToward(nearFenceTarget, CONST.MONSTER_ROAM_SPEED, dt);
+      this.moveToward(this._tmpFenceTarget, CONST.MONSTER_ROAM_SPEED, dt);
       return;
     }
 
@@ -298,7 +313,7 @@ export class MonsterAI implements GameSystem {
 
     // Track player position more frequently (every 0.5s instead of 2s)
     if (this.monster.stateTimer % 0.5 < dt) {
-      this.lastKnownPlayerPos.copy(this.player.getPosition());
+      this.lastKnownPlayerPos.copy(playerPos);
     }
 
     const speed = CONST.MONSTER_HUNT_SPEED *
@@ -307,31 +322,30 @@ export class MonsterAI implements GameSystem {
     this.moveToward(this.lastKnownPlayerPos, speed, dt);
 
     // Attack player if close enough
-    const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
+    const distToPlayer = this.monster.position.distanceTo(playerPos);
     if (distToPlayer < CONST.MONSTER_PLAYER_ATTACK_RANGE) {
       this.attackPlayer();
     }
 
     // If lost the player for too long, go back to roaming
     if (this.monster.stateTimer > 30) {
-      const dist = this.monster.position.distanceTo(this.player.getPosition());
-      if (dist > 35) {
+      if (distToPlayer > 35) {
         this.changeState(MonsterState.Roaming);
         this.pickRandomWaypoint();
       }
     }
   }
 
-  private updateStalking(dt: number, playerOutside: boolean): void {
-    // Lurk near the south gate, waiting for the player to exit
-    const gateOutside = this.gatePosition.clone();
-    gateOutside.z += 5; // Stay just outside the gate
-    const arrived = this.moveToward(gateOutside, CONST.MONSTER_ROAM_SPEED, dt);
+  private updateStalking(dt: number, playerOutside: boolean, playerPos: THREE.Vector3): void {
+    // Lurk near the south gate, waiting for the player to exit (reuse temp vector)
+    this._tmpGateOutside.copy(this.gatePosition);
+    this._tmpGateOutside.z += 5; // Stay just outside the gate
+    this.moveToward(this._tmpGateOutside, CONST.MONSTER_ROAM_SPEED, dt);
 
     if (playerOutside) {
-      const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
+      const distToPlayer = this.monster.position.distanceTo(playerPos);
       if (distToPlayer < 25) {
-        this.lastKnownPlayerPos.copy(this.player.getPosition());
+        this.lastKnownPlayerPos.copy(playerPos);
         this.changeState(MonsterState.Hunting);
         return;
       }
@@ -348,14 +362,15 @@ export class MonsterAI implements GameSystem {
     }
   }
 
-  private updatePacing(dt: number, playerOutside: boolean): void {
+  private updatePacing(dt: number, playerOutside: boolean, playerPos: THREE.Vector3): void {
     // Pace around the fence perimeter at a distance, creating tension
     const H = CONST.FENCE_PERIMETER_HALF;
     const paceRadius = H + 5;
 
     // Orbit around the perimeter
     const angle = (this.monster.stateTimer * 0.15) + (this.currentWaypointIdx * Math.PI / 4);
-    const paceTarget = new THREE.Vector3(
+    const paceTarget = this._tmpDir; // reuse temp
+    paceTarget.set(
       Math.cos(angle) * paceRadius,
       0,
       Math.sin(angle) * paceRadius
@@ -365,9 +380,9 @@ export class MonsterAI implements GameSystem {
 
     // If player ventures outside, hunt them
     if (playerOutside) {
-      const distToPlayer = this.monster.position.distanceTo(this.player.getPosition());
+      const distToPlayer = this.monster.position.distanceTo(playerPos);
       if (distToPlayer < 25) {
-        this.lastKnownPlayerPos.copy(this.player.getPosition());
+        this.lastKnownPlayerPos.copy(playerPos);
         this.changeState(MonsterState.Hunting);
         return;
       }
@@ -387,34 +402,48 @@ export class MonsterAI implements GameSystem {
 
   private attackPlayer(): void {
     this.player.takeDamage(CONST.MONSTER_PLAYER_DAMAGE);
-    // Knockback
-    const pushDir = this.player.getPosition().clone()
+    // Knockback (reuse temp vector)
+    this._tmpDir.copy(this.player.getPosition())
       .sub(this.monster.position).normalize();
-    this.player.camera.position.add(pushDir.multiplyScalar(2));
+    this.player.camera.position.add(this._tmpDir.multiplyScalar(2));
   }
 
   private moveToward(target: THREE.Vector3, speed: number, dt: number): boolean {
-    const dir = target.clone().sub(this.monster.position);
+    // Use pre-allocated temp vector instead of target.clone()
+    const dir = this._tmpDir;
+    dir.x = target.x - this.monster.position.x;
     dir.y = 0;
+    dir.z = target.z - this.monster.position.z;
     const dist = dir.length();
 
     if (dist < 1) return true;
 
     dir.normalize();
 
-    // Simple obstacle avoidance for trees
-    for (const tree of this.treePositions) {
-      const toTree = tree.clone().sub(this.monster.position);
-      toTree.y = 0;
-      const treeDist = toTree.length();
-      if (treeDist < 1.5) {
-        const avoid = this.monster.position.clone().sub(tree).normalize();
-        dir.add(avoid.multiplyScalar(1.5 / treeDist));
+    // Simple obstacle avoidance for trees with fast AABB rejection
+    const mx = this.monster.position.x;
+    const mz = this.monster.position.z;
+    for (let i = 0, len = this.treePositions.length; i < len; i++) {
+      const tree = this.treePositions[i];
+      // Fast AABB rejection: skip trees far away on either axis
+      const dx = tree.x - mx;
+      const dz = tree.z - mz;
+      if (dx > 3 || dx < -3 || dz > 3 || dz < -3) continue;
+
+      const treeDistSq = dx * dx + dz * dz;
+      if (treeDistSq < 2.25) { // 1.5 * 1.5
+        const treeDist = Math.sqrt(treeDistSq);
+        // Compute avoidance direction without clone()
+        this._tmpAvoid.x = -dx;
+        this._tmpAvoid.y = 0;
+        this._tmpAvoid.z = -dz;
+        this._tmpAvoid.normalize();
+        dir.addScaledVector(this._tmpAvoid, 1.5 / treeDist);
         dir.normalize();
       }
     }
 
-    this.monster.position.add(dir.multiplyScalar(speed * dt));
+    this.monster.position.addScaledVector(dir, speed * dt);
     this.monster.position.y = 0;
     this.monster.faceDirection(dir);
 

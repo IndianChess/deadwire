@@ -56,7 +56,7 @@ export const CONST = {
   FUEL_CANISTER_ACTIVE: 3,
 
   // Cameras
-  CAMERA_RESOLUTION: 256,
+  CAMERA_RESOLUTION: 128,
   CAMERA_COUNT: 4,
 
   // Game

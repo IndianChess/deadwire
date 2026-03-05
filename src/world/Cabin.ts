@@ -125,8 +125,7 @@ export function buildCabin(): CabinResult {
   // Cabin interior light
   const cabinLight = new THREE.PointLight(0xffaa55, 1.5, 12, 2);
   cabinLight.position.set(0, H - 0.3, 0);
-  cabinLight.castShadow = true;
-  cabinLight.shadow.mapSize.set(256, 256);
+  cabinLight.castShadow = false;
   group.add(cabinLight);
 
   // Monitor position (on table)

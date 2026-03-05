@@ -13,7 +13,7 @@ export class SecurityCamera {
     this.position = position.clone();
     this.lookAt = position.clone().add(lookDirection);
 
-    this.camera = new THREE.PerspectiveCamera(75, 1, 0.5, 80);
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.5, 40);
     this.camera.position.copy(this.position);
     this.camera.lookAt(this.lookAt);
 

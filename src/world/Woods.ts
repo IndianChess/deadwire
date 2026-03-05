@@ -163,7 +163,7 @@ export function buildWoods(): WoodsResult {
       metalness: 0.0,
     });
     const mesh = new THREE.InstancedMesh(canopyGeo, mat, Math.ceil(treePoints.length / canopyColors.length));
-    mesh.castShadow = true;
+    mesh.castShadow = false;
     mesh.receiveShadow = true;
     mesh.count = 0;
     canopyMeshes.push(mesh);
