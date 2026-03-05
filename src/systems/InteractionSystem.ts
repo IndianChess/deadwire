@@ -25,6 +25,7 @@ export class InteractionSystem implements GameSystem {
 
   onRepairMinigame: (() => Promise<boolean>) | null = null;
   onCameraViewToggle: (() => void) | null = null;
+  isViewingCameras: (() => boolean) | null = null;
 
   constructor(
     player: Player,
@@ -129,6 +130,11 @@ export class InteractionSystem implements GameSystem {
 
     // Handle interaction input
     if (this.currentInteractable && this.currentPrompt) {
+      // Don't process interactions if we're currently viewing cameras
+      if (this.isViewingCameras && this.isViewingCameras()) {
+        return;
+      }
+
       // E key for general interactions
       if (this.input.wasFixedPressed('e')) {
         this.currentInteractable.interact();

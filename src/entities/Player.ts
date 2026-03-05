@@ -13,6 +13,7 @@ export class Player implements GameSystem {
   hp = CONST.PLAYER_HP;
   noiseLevel = 0;
   inventory = new Set<string>();
+  inputEnabled = true;
 
   private input: InputManager;
   private euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -77,6 +78,8 @@ export class Player implements GameSystem {
   }
 
   fixedUpdate(dt: number): void {
+    if (!this.inputEnabled) return;
+
     // Mouse look
     if (this.input.isPointerLocked) {
       this.euler.setFromQuaternion(this.camera.quaternion);

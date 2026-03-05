@@ -18,6 +18,7 @@ export class HUD {
   private damageOverlay: HTMLDivElement;
   private crosshair: HTMLDivElement;
   private fpsDisplay: HTMLDivElement;
+  private cameraOverlay: HTMLDivElement;
   private frames = 0;
   private lastFpsUpdate = 0;
 
@@ -232,6 +233,11 @@ export class HUD {
       <div id="hud-inventory"></div>
       <div id="hud-fps" style="position: absolute; top: 150px; left: 20px; font-size: 10px; opacity: 0.5;">FPS: 0</div>
       <div id="hud-damage-overlay"></div>
+      <div id="camera-overlay" style="display: none; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); border: 1px solid #88ff88; padding: 10px; text-align: center;">
+        <div style="font-size: 16px; margin-bottom: 5px;">CAM <span id="camera-id">1</span></div>
+        <div style="font-size: 12px; opacity: 0.7;">[A/D] Switch Camera</div>
+        <div style="font-size: 12px; opacity: 0.7;">[TAB/ESC] Exit</div>
+      </div>
     `;
 
     document.body.appendChild(this.container);
@@ -248,6 +254,7 @@ export class HUD {
     this.damageOverlay = this.container.querySelector('#hud-damage-overlay') as HTMLDivElement;
     this.crosshair = this.container.querySelector('#hud-crosshair') as HTMLDivElement;
     this.fpsDisplay = this.container.querySelector('#hud-fps') as HTMLDivElement;
+    this.cameraOverlay = this.container.querySelector('#camera-overlay') as HTMLDivElement;
 
     // Objectives elements
     this.objTimerValue = this.container.querySelector('#obj-timer') as HTMLSpanElement;
@@ -296,6 +303,46 @@ export class HUD {
   hide(): void {
     this.visible = false;
     this.container.style.display = 'none';
+  }
+
+  showCameraOverlay(cameraId: number): void {
+    this.visible = true;
+    this.container.style.display = 'block';
+
+    // Hide standard HUD elements manually while showing camera overlay
+    this.staminaBar.style.display = 'none';
+    this.flashlightIndicator.style.display = 'none';
+    this.noiseMeter.style.display = 'none';
+    this.interactionPrompt.style.display = 'none';
+    this.timerDisplay.style.display = 'none';
+    this.hpDisplay.style.display = 'none';
+    this.inventoryDisplay.style.display = 'none';
+    this.crosshair.style.display = 'none';
+    this.container.querySelector('#hud-objectives')!.setAttribute('style', 'display: none !important');
+
+    this.cameraOverlay.style.display = 'block';
+    this.cameraOverlay.querySelector('#camera-id')!.textContent = (cameraId + 1).toString();
+  }
+
+  updateCameraOverlay(cameraId: number): void {
+    if (this.cameraOverlay.style.display === 'block') {
+      this.cameraOverlay.querySelector('#camera-id')!.textContent = (cameraId + 1).toString();
+    }
+  }
+
+  hideCameraOverlay(): void {
+    this.cameraOverlay.style.display = 'none';
+
+    // Restore standard HUD elements
+    this.staminaBar.style.display = 'block';
+    this.flashlightIndicator.style.display = 'block';
+    this.noiseMeter.style.display = 'block';
+    this.interactionPrompt.style.display = 'block';
+    this.timerDisplay.style.display = 'block';
+    this.hpDisplay.style.display = 'block';
+    this.inventoryDisplay.style.display = 'block';
+    this.crosshair.style.display = 'block';
+    this.container.querySelector('#hud-objectives')!.setAttribute('style', '');
   }
 
   updateTimer(remainingSeconds: number): void {

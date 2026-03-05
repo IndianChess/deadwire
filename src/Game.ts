@@ -133,8 +133,11 @@ export class Game {
 
     // Wire up camera view toggle
     this.interactionSystem.onCameraViewToggle = () => {
-      this.cameraSystem.isViewingCameras = !this.cameraSystem.isViewingCameras;
+      this.cameraSystem.isViewingCameras = true;
+      this.player.inputEnabled = false;
+      this.hud.showCameraOverlay(this.cameraSystem.selectedCamera);
     };
+    this.interactionSystem.isViewingCameras = () => this.cameraSystem ? this.cameraSystem.isViewingCameras : false;
 
     // Monster AI
     this.monsterAI = new MonsterAI(
@@ -214,6 +217,11 @@ export class Game {
         return;
       }
 
+      if (this.cameraSystem && this.cameraSystem.isViewingCameras && this.cameraSystem.cameras.length > 0) {
+        origRender(scene, this.cameraSystem.cameras[this.cameraSystem.selectedCamera].camera);
+        return;
+      }
+
       if (composerRendering) {
         origRender(scene, camera);
         return;
@@ -252,6 +260,23 @@ export class Game {
 
         if (this.surviveTimer <= 0) {
           this.victory();
+        }
+
+        // Camera System Input Handling
+        if (this.cameraSystem.isViewingCameras) {
+          if (this.engine.input.wasFixedPressed('tab') || this.engine.input.wasFixedPressed('escape')) {
+            this.cameraSystem.isViewingCameras = false;
+            this.player.inputEnabled = true;
+            this.hud.hideCameraOverlay();
+          }
+          if (this.engine.input.wasFixedPressed('arrowleft') || this.engine.input.wasFixedPressed('a')) {
+            this.cameraSystem.selectedCamera = (this.cameraSystem.selectedCamera - 1 + CONST.CAMERA_COUNT) % CONST.CAMERA_COUNT;
+            this.hud.updateCameraOverlay(this.cameraSystem.selectedCamera);
+          }
+          if (this.engine.input.wasFixedPressed('arrowright') || this.engine.input.wasFixedPressed('d')) {
+            this.cameraSystem.selectedCamera = (this.cameraSystem.selectedCamera + 1) % CONST.CAMERA_COUNT;
+            this.hud.updateCameraOverlay(this.cameraSystem.selectedCamera);
+          }
         }
       },
     };
