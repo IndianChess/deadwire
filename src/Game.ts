@@ -131,6 +131,11 @@ export class Game {
     // Wire up repair minigame
     this.interactionSystem.onRepairMinigame = () => this.wrenchMinigame.start();
 
+    // Wire up camera view toggle
+    this.interactionSystem.onCameraViewToggle = () => {
+      this.cameraSystem.isViewingCameras = !this.cameraSystem.isViewingCameras;
+    };
+
     // Monster AI
     this.monsterAI = new MonsterAI(
       this.monster,

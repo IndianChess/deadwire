@@ -128,17 +128,14 @@ export class InteractionSystem implements GameSystem {
     }
 
     // Handle interaction input
-    if (this.input.wasPressed('e') && this.currentInteractable) {
-      this.currentInteractable.interact();
-    }
-
-    // Camera view toggle with Tab
-    if (this.input.wasPressed('tab') && this.onCameraViewToggle) {
-      const dist = playerPos.distanceTo(
-        this.interactables[this.interactables.length - 1]?.position || playerPos
-      );
-      if (dist < 3) {
-        this.onCameraViewToggle();
+    if (this.currentInteractable && this.currentPrompt) {
+      // E key for general interactions
+      if (this.input.wasFixedPressed('e')) {
+        this.currentInteractable.interact();
+      }
+      // Tab key for camera view toggle
+      if (this.input.wasFixedPressed('tab') && this.currentPrompt.includes('TAB')) {
+        this.currentInteractable.interact();
       }
     }
   }

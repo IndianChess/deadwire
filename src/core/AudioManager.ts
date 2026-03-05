@@ -61,7 +61,7 @@ export class AudioManager {
 
     this.sounds.set('generatorHum', {
       audio,
-      stop: () => { try { osc1.stop(); osc2.stop(); } catch {} },
+      stop: () => { try { osc1.stop(); osc2.stop(); } catch { } },
     });
 
     return audio;
@@ -96,7 +96,7 @@ export class AudioManager {
     audio.setNodeSource(gain as unknown as AudioBufferSourceNode);
     audio.setRefDistance(4);
     audio.setRolloffFactor(1.5);
-    audio.setLoop(true);
+
 
     const obj = new THREE.Object3D();
     obj.position.copy(position);
@@ -148,7 +148,7 @@ export class AudioManager {
     source.connect(filter);
     filter.connect(gain);
     audio.setNodeSource(gain as unknown as AudioBufferSourceNode);
-    audio.setLoop(true);
+
 
     source.start();
 
@@ -168,7 +168,7 @@ export class AudioManager {
 
     this.sounds.set('heartbeat', {
       audio,
-      stop: () => {},
+      stop: () => { },
     });
 
     return audio;
@@ -228,7 +228,7 @@ export class AudioManager {
 
   dispose(): void {
     for (const [, sound] of this.sounds) {
-      try { sound.stop(); } catch {}
+      try { sound.stop(); } catch { }
     }
     this.sounds.clear();
   }

@@ -83,6 +83,7 @@ export class Engine {
         sys.fixedUpdate?.(CONST.FIXED_DT);
       }
       this.accumulator -= CONST.FIXED_DT;
+      this.input.consumeFixedPresses();
     }
 
     const alpha = this.accumulator / CONST.FIXED_DT;

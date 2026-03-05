@@ -2,6 +2,9 @@ export class InputManager {
   private keysDown = new Set<string>();
   private keysPressed = new Set<string>();
   private keysReleased = new Set<string>();
+  // Accumulates key presses across frames so fixedUpdate (which may not run
+  // every frame) never misses a press.  Cleared via consumeFixedPresses().
+  private fixedKeysPressed = new Set<string>();
   mouseDeltaX = 0;
   mouseDeltaY = 0;
   isPointerLocked = false;
@@ -29,6 +32,16 @@ export class InputManager {
     return this.keysPressed.has(key.toLowerCase());
   }
 
+  /** Like wasPressed but safe for fixedUpdate – survives across frames. */
+  wasFixedPressed(key: string): boolean {
+    return this.fixedKeysPressed.has(key.toLowerCase());
+  }
+
+  /** Call once per frame AFTER all fixedUpdate iterations have run. */
+  consumeFixedPresses(): void {
+    this.fixedKeysPressed.clear();
+  }
+
   wasReleased(key: string): boolean {
     return this.keysReleased.has(key.toLowerCase());
   }
@@ -49,8 +62,12 @@ export class InputManager {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     const key = e.key.toLowerCase();
+    if (key === 'tab') {
+      e.preventDefault();
+    }
     if (!this.keysDown.has(key)) {
       this.keysPressed.add(key);
+      this.fixedKeysPressed.add(key);
     }
     this.keysDown.add(key);
   };
