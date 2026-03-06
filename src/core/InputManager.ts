@@ -37,6 +37,11 @@ export class InputManager {
     return this.fixedKeysPressed.has(key.toLowerCase());
   }
 
+  /** Consume a single key so later systems in the same tick won't see it. */
+  consumeFixedPress(key: string): void {
+    this.fixedKeysPressed.delete(key.toLowerCase());
+  }
+
   /** Call once per frame AFTER all fixedUpdate iterations have run. */
   consumeFixedPresses(): void {
     this.fixedKeysPressed.clear();

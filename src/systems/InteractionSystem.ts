@@ -142,6 +142,7 @@ export class InteractionSystem implements GameSystem {
       // Tab key for camera view toggle
       if (this.input.wasFixedPressed('tab') && this.currentPrompt.includes('TAB')) {
         this.currentInteractable.interact();
+        this.input.consumeFixedPress('tab');
       }
     }
   }
