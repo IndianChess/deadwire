@@ -46,7 +46,7 @@ export class Player implements GameSystem {
 
     this.flashlight = new THREE.SpotLight(0xfff5e0, 15, 60, 0.7, 0.3, 0.8);
     this.flashlight.castShadow = true;
-    this.flashlight.shadow.mapSize.set(512, 512);
+    this.flashlight.shadow.mapSize.set(256, 256);
     this.flashlight.shadow.camera.near = 0.2;
     this.flashlight.shadow.camera.far = 50;
     this.flashlight.target = new THREE.Object3D();

@@ -80,7 +80,7 @@ export function createPostProcessing(
 
   const onResize = () => {
     composer.setSize(window.innerWidth, window.innerHeight);
-    bloomPass.resolution.set(window.innerWidth / 2, window.innerHeight / 2);
+    bloomPass.resolution.set(window.innerWidth / 4, window.innerHeight / 4);
   };
   window.addEventListener('resize', onResize);
 

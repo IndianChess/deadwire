@@ -234,7 +234,7 @@ export class HUD {
       <div id="hud-fps" style="position: absolute; top: 150px; left: 20px; font-size: 10px; opacity: 0.5;">FPS: 0</div>
       <div id="hud-damage-overlay"></div>
       <div id="camera-overlay" style="display: none; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); border: 1px solid #88ff88; padding: 10px; text-align: center;">
-        <div style="font-size: 16px; margin-bottom: 5px;">CAM <span id="camera-id">1</span></div>
+        <div style="font-size: 16px; margin-bottom: 5px;">CAM <span id="camera-id">1</span> &mdash; <span id="camera-dir">NORTH</span></div>
         <div style="font-size: 12px; opacity: 0.7;">[A/D] Switch Camera</div>
         <div style="font-size: 12px; opacity: 0.7;">[TAB/ESC] Exit</div>
       </div>
@@ -305,6 +305,8 @@ export class HUD {
     this.container.style.display = 'none';
   }
 
+  private static readonly CAMERA_LABELS = ['NORTH', 'EAST', 'SOUTH', 'WEST'];
+
   showCameraOverlay(cameraId: number): void {
     this.visible = true;
     this.container.style.display = 'block';
@@ -322,11 +324,13 @@ export class HUD {
 
     this.cameraOverlay.style.display = 'block';
     this.cameraOverlay.querySelector('#camera-id')!.textContent = (cameraId + 1).toString();
+    this.cameraOverlay.querySelector('#camera-dir')!.textContent = HUD.CAMERA_LABELS[cameraId] ?? '';
   }
 
   updateCameraOverlay(cameraId: number): void {
     if (this.cameraOverlay.style.display === 'block') {
       this.cameraOverlay.querySelector('#camera-id')!.textContent = (cameraId + 1).toString();
+      this.cameraOverlay.querySelector('#camera-dir')!.textContent = HUD.CAMERA_LABELS[cameraId] ?? '';
     }
   }
 

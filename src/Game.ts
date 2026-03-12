@@ -218,7 +218,7 @@ export class Game {
       }
 
       if (this.cameraSystem && this.cameraSystem.isViewingCameras && this.cameraSystem.cameras.length > 0) {
-        origRender(scene, this.cameraSystem.cameras[this.cameraSystem.selectedCamera].camera);
+        this.cameraSystem.renderFullscreenView(origRender);
         return;
       }
 
@@ -268,6 +268,8 @@ export class Game {
             this.cameraSystem.isViewingCameras = false;
             this.player.inputEnabled = true;
             this.hud.hideCameraOverlay();
+            this.engine.input.consumeFixedPress('tab');
+            this.engine.input.consumeFixedPress('escape');
           }
           if (this.engine.input.wasFixedPressed('arrowleft') || this.engine.input.wasFixedPressed('a')) {
             this.cameraSystem.selectedCamera = (this.cameraSystem.selectedCamera - 1 + CONST.CAMERA_COUNT) % CONST.CAMERA_COUNT;
@@ -277,6 +279,12 @@ export class Game {
             this.cameraSystem.selectedCamera = (this.cameraSystem.selectedCamera + 1) % CONST.CAMERA_COUNT;
             this.hud.updateCameraOverlay(this.cameraSystem.selectedCamera);
           }
+        } else if (this.engine.input.wasFixedPressed('tab')) {
+          // Open security cameras from anywhere
+          this.cameraSystem.isViewingCameras = true;
+          this.player.inputEnabled = false;
+          this.hud.showCameraOverlay(this.cameraSystem.selectedCamera);
+          this.engine.input.consumeFixedPress('tab');
         }
       },
     };
@@ -292,6 +300,12 @@ export class Game {
     });
 
     eventBus.on('player:damaged', () => {
+      // Auto-close cameras if player takes damage while viewing
+      if (this.cameraSystem?.isViewingCameras) {
+        this.cameraSystem.isViewingCameras = false;
+        this.player.inputEnabled = true;
+        this.hud.hideCameraOverlay();
+      }
       this.audioManager?.playOneShot('hit');
     });
 
@@ -304,6 +318,8 @@ export class Game {
     // Pause
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        // Don't pause if viewing cameras — ESC closes cameras via fixedUpdate
+        if (this.cameraSystem?.isViewingCameras) return;
         if (this.state === GameState.Playing) {
           this.pauseGame();
         } else if (this.state === GameState.Paused) {

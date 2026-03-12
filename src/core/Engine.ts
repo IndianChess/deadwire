@@ -20,7 +20,7 @@ export class Engine {
   private onRenderCallbacks: Array<() => void> = [];
 
   constructor(container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(1);
     this.renderer.shadowMap.enabled = true;
@@ -37,7 +37,7 @@ export class Engine {
       70,
       window.innerWidth / window.innerHeight,
       0.1,
-      200
+      100
     );
 
     this.input = new InputManager(this.renderer.domElement);

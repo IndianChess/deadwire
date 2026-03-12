@@ -98,7 +98,7 @@ export function buildWoods(): WoodsResult {
   const rng = () => Math.random();
 
   // Ground plane
-  const groundGeo = new THREE.CircleGeometry(CONST.WOODS_RADIUS, 64);
+  const groundGeo = new THREE.CircleGeometry(CONST.WOODS_RADIUS, 32);
   const groundMat = new THREE.MeshStandardMaterial({
     color: 0x1a1408,
     roughness: 0.95,

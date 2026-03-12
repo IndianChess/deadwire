@@ -20,6 +20,15 @@ export class CameraSystem implements GameSystem {
   private isPowerOn = true;
   private monitorMaterials: THREE.ShaderMaterial[] = [];
 
+  // Fullscreen night vision rendering
+  private fullscreenTarget: THREE.WebGLRenderTarget;
+  private fullscreenMaterial: THREE.ShaderMaterial;
+  private fullscreenScene: THREE.Scene;
+  private fullscreenCamera: THREE.OrthographicCamera;
+  private nightVisionLight: THREE.AmbientLight;
+
+  static readonly CAMERA_LABELS = ['NORTH', 'EAST', 'SOUTH', 'WEST'];
+
   private static CRT_VERTEX = `
     varying vec2 vUv;
     void main() {
@@ -85,6 +94,64 @@ export class CameraSystem implements GameSystem {
     }
   `;
 
+  private static NIGHTVISION_FRAGMENT = `
+    uniform sampler2D tDiffuse;
+    uniform float staticLevel;
+    uniform float time;
+    varying vec2 vUv;
+
+    float random(vec2 st) {
+      return fract(sin(dot(st, vec2(12.9898, 78.233))) * 43758.5453123);
+    }
+
+    void main() {
+      // Barrel distortion (subtle for fullscreen)
+      vec2 uv = vUv - 0.5;
+      float dist = dot(uv, uv);
+      uv *= 1.0 + dist * 0.08;
+      uv += 0.5;
+
+      if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+      }
+
+      vec4 color = texture2D(tDiffuse, uv);
+
+      // Night vision amplification: gamma boost + brightness multiply
+      float lum = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+      lum = pow(max(lum, 0.0), 0.45) * 2.0;
+      // Green phosphor night vision tint
+      color.rgb = vec3(lum * 0.1, lum * 0.9, lum * 0.1);
+
+      // Scanlines (finer for fullscreen)
+      float scanline = sin(uv.y * 500.0 + time * 3.0) * 0.04;
+      color.rgb -= scanline;
+
+      // Horizontal line artifact
+      float hLine = step(0.998, fract(uv.y * 200.0 + time * 0.5));
+      color.rgb += hLine * 0.05;
+
+      // Static noise from monster proximity
+      float noise = random(uv + vec2(time * 0.7, time * 1.3)) * staticLevel * 0.8;
+      color.rgb = mix(color.rgb, vec3(random(uv * 3.0 + time)), noise);
+
+      // Flickering
+      float flicker = 0.97 + random(vec2(time * 0.15, 0.0)) * 0.03;
+      color.rgb *= flicker;
+
+      // Vignette (softer for fullscreen)
+      float vig = 1.0 - dist * 1.2;
+      color.rgb *= vig;
+
+      // Subtle grain
+      float grain = (random(uv * time * 0.5) - 0.5) * 0.03;
+      color.rgb += grain;
+
+      gl_FragColor = vec4(color.rgb, 1.0);
+    }
+  `;
+
   constructor(
     renderer: THREE.WebGLRenderer,
     scene: THREE.Scene,
@@ -111,6 +178,40 @@ export class CameraSystem implements GameSystem {
 
     // Create monitor display in cabin
     this.createMonitor(monitorPosition);
+
+    // Setup fullscreen night vision rendering
+    this.fullscreenTarget = new THREE.WebGLRenderTarget(
+      window.innerWidth, window.innerHeight,
+      { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }
+    );
+
+    this.fullscreenMaterial = new THREE.ShaderMaterial({
+      vertexShader: CameraSystem.CRT_VERTEX,
+      fragmentShader: CameraSystem.NIGHTVISION_FRAGMENT,
+      uniforms: {
+        tDiffuse: { value: this.fullscreenTarget.texture },
+        staticLevel: { value: 0.0 },
+        time: { value: 0.0 },
+      },
+    });
+
+    this.fullscreenScene = new THREE.Scene();
+    this.fullscreenCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const quad = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      this.fullscreenMaterial
+    );
+    this.fullscreenScene.add(quad);
+
+    // Night vision light (added to main scene, hidden by default)
+    this.nightVisionLight = new THREE.AmbientLight(0xffffff, 2.0);
+    this.nightVisionLight.visible = false;
+    scene.add(this.nightVisionLight);
+
+    // Resize handler for fullscreen target
+    window.addEventListener('resize', () => {
+      this.fullscreenTarget.setSize(window.innerWidth, window.innerHeight);
+    });
 
     eventBus.on('generator:power-toggle', ({ isOn }) => {
       this.isPowerOn = isOn;
@@ -164,6 +265,47 @@ export class CameraSystem implements GameSystem {
     group.position.y += 0.3;
     this.scene.add(group);
     this.monitorMesh = frame;
+  }
+
+  renderFullscreenView(origRender: (scene: THREE.Scene, camera: THREE.Camera) => void): void {
+    const cam = this.cameras[this.selectedCamera];
+    if (!cam) return;
+
+    const time = performance.now() * 0.001;
+
+    // Boost scene lighting for night vision
+    this.nightVisionLight.visible = true;
+    const fog = this.scene.fog as THREE.FogExp2 | null;
+    const savedDensity = fog?.density ?? 0.02;
+    if (fog) fog.density = 0.004;
+
+    // Increase camera far clip for fullscreen view
+    const savedFar = cam.camera.far;
+    cam.camera.far = 80;
+    cam.camera.updateProjectionMatrix();
+
+    // Hide monitor to avoid rendering it
+    if (this.monitorMesh) this.monitorMesh.visible = false;
+
+    // Render scene from security camera to fullscreen target
+    this.renderer.setRenderTarget(this.fullscreenTarget);
+    origRender(this.scene, cam.camera);
+    this.renderer.setRenderTarget(null);
+
+    // Restore scene state
+    this.nightVisionLight.visible = false;
+    if (fog) fog.density = savedDensity;
+    cam.camera.far = savedFar;
+    cam.camera.updateProjectionMatrix();
+    if (this.monitorMesh) this.monitorMesh.visible = true;
+
+    // Update fullscreen shader uniforms
+    this.fullscreenMaterial.uniforms.tDiffuse.value = this.fullscreenTarget.texture;
+    this.fullscreenMaterial.uniforms.staticLevel.value = cam.staticLevel;
+    this.fullscreenMaterial.uniforms.time.value = time;
+
+    // Render CRT quad to screen
+    origRender(this.fullscreenScene, this.fullscreenCamera);
   }
 
   fixedUpdate(_dt: number): void {

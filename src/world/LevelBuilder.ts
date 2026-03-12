@@ -29,7 +29,7 @@ export function buildLevel(scene: THREE.Scene): LevelData {
   const moonLight = new THREE.DirectionalLight(0x4466aa, 0.5);
   moonLight.position.set(-20, 40, -10);
   moonLight.castShadow = true;
-  moonLight.shadow.mapSize.set(1024, 1024);
+  moonLight.shadow.mapSize.set(512, 512);
   moonLight.shadow.camera.left = -50;
   moonLight.shadow.camera.right = 50;
   moonLight.shadow.camera.top = 50;
