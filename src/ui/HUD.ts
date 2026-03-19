@@ -19,6 +19,8 @@ export class HUD {
   private crosshair: HTMLDivElement;
   private fpsDisplay: HTMLDivElement;
   private cameraOverlay: HTMLDivElement;
+  private compassStrip: HTMLDivElement;
+  private compassContainer: HTMLDivElement;
   private frames = 0;
   private lastFpsUpdate = 0;
 
@@ -197,6 +199,59 @@ export class HUD {
         #hud-objectives .obj-value.status-running { color: #88ff88; }
         #hud-objectives .obj-value.status-off { color: #ff4444; }
         #hud-objectives .obj-value.status-low { color: #ffaa44; }
+        #hud-compass {
+          position: absolute;
+          bottom: 56px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 300px;
+          height: 28px;
+          overflow: hidden;
+          border-bottom: 1px solid rgba(136, 255, 136, 0.2);
+        }
+        #hud-compass-strip {
+          position: absolute;
+          left: 50%;
+          height: 100%;
+        }
+        #hud-compass .compass-label {
+          position: absolute;
+          top: 2px;
+          transform: translateX(-50%);
+          font-size: 11px;
+          opacity: 0.6;
+        }
+        #hud-compass .compass-label.cardinal {
+          font-size: 13px;
+          opacity: 0.9;
+        }
+        #hud-compass .compass-label.north {
+          color: #ff6644;
+          text-shadow: 0 0 4px #cc4422;
+        }
+        #hud-compass .compass-tick {
+          position: absolute;
+          bottom: 0;
+          width: 1px;
+          height: 8px;
+          background: rgba(136, 255, 136, 0.25);
+          transform: translateX(-50%);
+        }
+        #hud-compass .compass-tick.major {
+          height: 12px;
+          background: rgba(136, 255, 136, 0.4);
+        }
+        #hud-compass-center {
+          position: absolute;
+          left: 50%;
+          top: 0;
+          transform: translateX(-50%);
+          width: 0; height: 0;
+          border-left: 4px solid transparent;
+          border-right: 4px solid transparent;
+          border-top: 6px solid rgba(136, 255, 136, 0.8);
+          z-index: 1;
+        }
       </style>
       <div id="hud-crosshair"></div>
       <div id="hud-objectives">
@@ -228,6 +283,7 @@ export class HUD {
         <div id="hud-noise-bar"><div id="hud-noise-fill"></div></div>
       </div>
       <div id="hud-interaction"></div>
+      <div id="hud-compass"><div id="hud-compass-strip"></div><div id="hud-compass-center"></div></div>
       <div id="hud-timer">05:00</div>
       <div id="hud-hp"></div>
       <div id="hud-inventory"></div>
@@ -255,6 +311,43 @@ export class HUD {
     this.crosshair = this.container.querySelector('#hud-crosshair') as HTMLDivElement;
     this.fpsDisplay = this.container.querySelector('#hud-fps') as HTMLDivElement;
     this.cameraOverlay = this.container.querySelector('#camera-overlay') as HTMLDivElement;
+    this.compassContainer = this.container.querySelector('#hud-compass') as HTMLDivElement;
+    this.compassStrip = this.container.querySelector('#hud-compass-strip') as HTMLDivElement;
+
+    // Build compass markers
+    const PX_PER_DEG = 2.5;
+    const directions = [
+      { deg: 0, label: 'N', cardinal: true, north: true },
+      { deg: 45, label: 'NE', cardinal: false, north: false },
+      { deg: 90, label: 'E', cardinal: true, north: false },
+      { deg: 135, label: 'SE', cardinal: false, north: false },
+      { deg: 180, label: 'S', cardinal: true, north: false },
+      { deg: 225, label: 'SW', cardinal: false, north: false },
+      { deg: 270, label: 'W', cardinal: true, north: false },
+      { deg: 315, label: 'NW', cardinal: false, north: false },
+    ];
+    for (let offset = -360; offset <= 720; offset += 360) {
+      for (const d of directions) {
+        const px = (d.deg + offset) * PX_PER_DEG;
+        const label = document.createElement('span');
+        label.className = `compass-label${d.cardinal ? ' cardinal' : ''}${d.north ? ' north' : ''}`;
+        label.style.left = `${px}px`;
+        label.textContent = d.label;
+        this.compassStrip.appendChild(label);
+        const tick = document.createElement('span');
+        tick.className = 'compass-tick major';
+        tick.style.left = `${px}px`;
+        this.compassStrip.appendChild(tick);
+      }
+      for (let deg = 0; deg < 360; deg += 15) {
+        if (deg % 45 === 0) continue;
+        const px = (deg + offset) * PX_PER_DEG;
+        const tick = document.createElement('span');
+        tick.className = 'compass-tick';
+        tick.style.left = `${px}px`;
+        this.compassStrip.appendChild(tick);
+      }
+    }
 
     // Objectives elements
     this.objTimerValue = this.container.querySelector('#obj-timer') as HTMLSpanElement;
@@ -320,6 +413,7 @@ export class HUD {
     this.hpDisplay.style.display = 'none';
     this.inventoryDisplay.style.display = 'none';
     this.crosshair.style.display = 'none';
+    this.compassContainer.style.display = 'none';
     this.container.querySelector('#hud-objectives')!.setAttribute('style', 'display: none !important');
 
     this.cameraOverlay.style.display = 'block';
@@ -346,6 +440,7 @@ export class HUD {
     this.hpDisplay.style.display = 'block';
     this.inventoryDisplay.style.display = 'block';
     this.crosshair.style.display = 'block';
+    this.compassContainer.style.display = 'block';
     this.container.querySelector('#hud-objectives')!.setAttribute('style', '');
   }
 
@@ -389,6 +484,11 @@ export class HUD {
       this.noiseFill.style.background = '#88ff88';
       this.noiseFill.style.boxShadow = '0 0 6px #44aa44';
     }
+
+    // Compass
+    const yaw = this.player.camera.rotation.y;
+    const headingDeg = (-yaw) * (180 / Math.PI);
+    this.compassStrip.style.transform = `translateX(${-headingDeg * 2.5}px)`;
 
     // Timer
     const mins = Math.floor(this.surviveTime / 60);

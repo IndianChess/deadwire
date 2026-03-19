@@ -71,8 +71,9 @@ export function buildFence(): FenceResult {
     const length = dir.length();
     dir.normalize();
     const numPosts = Math.floor(length / spacing) + 1;
-    const postPositionsForWires: THREE.Vector3[] = [];
+    const wireGroups: THREE.Vector3[][] = [[]];
     const wirePositions: number[] = [];
+    let gateSkipped = false;
 
     for (let i = 0; i < numPosts; i++) {
       const t = i / (numPosts - 1);
@@ -82,23 +83,34 @@ export function buildFence(): FenceResult {
       if (def.hasGate) {
         const mid = 0.5;
         const gateHalfWidth = 1.5 / length;
-        if (Math.abs(t - mid) < gateHalfWidth) continue;
+        if (Math.abs(t - mid) < gateHalfWidth) {
+          gateSkipped = true;
+          continue;
+        }
+      }
+
+      // Start new wire group after gate gap (prevents wires spanning the opening)
+      if (gateSkipped) {
+        wireGroups.push([]);
+        gateSkipped = false;
       }
 
       dummy.position.set(pos.x, FH / 2, pos.z);
       dummy.updateMatrix();
       instancedPosts.setMatrixAt(currentPostIdx++, dummy.matrix);
-      postPositionsForWires.push(dummy.position.clone());
+      wireGroups[wireGroups.length - 1].push(dummy.position.clone());
     }
 
-    // Wires between consecutive posts
+    // Wires between consecutive posts (no connection across gate gap)
     const wireRows = 5;
-    for (let p = 0; p < postPositionsForWires.length - 1; p++) {
-      const p1 = postPositionsForWires[p];
-      const p2 = postPositionsForWires[p + 1];
-      for (let row = 0; row < wireRows; row++) {
-        const y = 0.3 + (row / (wireRows - 1)) * (FH - 0.6);
-        wirePositions.push(p1.x, y, p1.z, p2.x, y, p2.z);
+    for (const wireGroup of wireGroups) {
+      for (let p = 0; p < wireGroup.length - 1; p++) {
+        const p1 = wireGroup[p];
+        const p2 = wireGroup[p + 1];
+        for (let row = 0; row < wireRows; row++) {
+          const y = 0.3 + (row / (wireRows - 1)) * (FH - 0.6);
+          wirePositions.push(p1.x, y, p1.z, p2.x, y, p2.z);
+        }
       }
     }
 
@@ -124,9 +136,9 @@ export function buildFence(): FenceResult {
 
     // Gate gap in collision
     if (def.hasGate) {
-      // Create two collision boxes with gap
-      const gapMin = -1.5;
-      const gapMax = 1.5;
+      // Create two collision boxes with a wide gap for the gate opening
+      const gapMin = -2.2;
+      const gapMax = 2.2;
       const leftBox = new THREE.Box3(
         boxMin.clone(),
         new THREE.Vector3(gapMin, FH, boxMax.z)
@@ -136,6 +148,22 @@ export function buildFence(): FenceResult {
         boxMax.clone()
       );
       allBoxes.push(leftBox, rightBox);
+
+      // Gate marker lights (green LEDs on the gate-edge posts so player can spot the exit)
+      const markerMat = new THREE.MeshBasicMaterial({ color: 0x44ff44 });
+      const markerGeo = new THREE.SphereGeometry(0.06, 6, 6);
+      // Gate-edge posts are at x ≈ ±2 on the south fence (z = H)
+      const leftMarker = new THREE.Mesh(markerGeo, markerMat);
+      leftMarker.position.set(gapMax + 0.05, FH - 0.15, def.start.z);
+      segGroup.add(leftMarker);
+      const rightMarker = new THREE.Mesh(markerGeo, markerMat);
+      rightMarker.position.set(gapMin - 0.05, FH - 0.15, def.start.z);
+      segGroup.add(rightMarker);
+
+      // Small point light to illuminate the gate area
+      const gateLight = new THREE.PointLight(0x44ff44, 0.5, 6, 2);
+      gateLight.position.set(0, FH, def.start.z);
+      segGroup.add(gateLight);
     } else {
       const box = new THREE.Box3(boxMin, boxMax);
       allBoxes.push(box);

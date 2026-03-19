@@ -22,11 +22,11 @@ export function buildLevel(scene: THREE.Scene): LevelData {
   scene.add(woods.group);
 
   // Ambient light (very dim moonlight)
-  const ambientLight = new THREE.AmbientLight(0x111122, 0.3);
+  const ambientLight = new THREE.AmbientLight(0x111122, 0.55);
   scene.add(ambientLight);
 
   // Moonlight
-  const moonLight = new THREE.DirectionalLight(0x4466aa, 0.5);
+  const moonLight = new THREE.DirectionalLight(0x4466aa, 0.8);
   moonLight.position.set(-20, 40, -10);
   moonLight.castShadow = true;
   moonLight.shadow.mapSize.set(512, 512);
